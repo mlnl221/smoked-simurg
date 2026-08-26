@@ -21,3 +21,4 @@ htmlcov/
 staging/
 .ruff_cache/
 .vscode/
+.cache/

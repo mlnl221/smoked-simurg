@@ -42,6 +42,7 @@ MAGAZINE_EDITABLE = [
     "publisher",
     "country",
     "frequency",
+    "page_count",
     "release_type",
     "tags",
     "album_desc",
@@ -64,40 +65,27 @@ def _resolve_editor() -> str:
 
 def _print_metadata(metadata: dict, is_mag: bool) -> None:
     click.secho("\nCurrent metadata:", fg="cyan", bold=True)
-    keys = (
-        [
-            "title",
-            "release_title",
-            "year",
-            "volume",
-            "issue_number",
-            "publisher",
-            "print_issn",
-            "tags",
-            "release_type",
-        ]
-        if is_mag
-        else [
-            "title",
-            "remaster_title",
-            "authors",
-            "year",
-            "remaster_year",
-            "publisher",
-            "isbn",
-            "page_count",
-            "language",
-            "source",
-            "tags",
-        ]
-    )
+    # Show every editable field (including optional ones) so missing values are
+    # visible and can be revised. Cover image is handled separately, so it is
+    # intentionally omitted. Empty values are shown as dim "(empty)" instead
+    # of being hidden (previous behaviour skipped them).
+    # `album_desc` is a Gazelle-legacy wire name: for ebooks it is the
+    # synopsis/description, for magazines it is the per-issue release notes
+    # (see `simurg/uploader/payload.py:15` and `simurg/metadata/combine.py:240`).
+    # Display it as `description` so users are not confused by music jargon.
+    display_labels = {"album_desc": "description"}
+    keys = MAGAZINE_EDITABLE if is_mag else EBOOK_EDITABLE
     for k in keys:
         v = metadata.get(k)
-        if v is None or v == "":
-            continue
-        if isinstance(v, list):
-            v = ", ".join(str(x) for x in v)
-        click.echo(f"  {k:15}: {v}")
+        if v is None or v == "" or v == []:
+            display = click.style("(empty)", fg="yellow", dim=True)
+        elif isinstance(v, list):
+            joined = ", ".join(str(x) for x in v if str(x).strip())
+            display = joined if joined else click.style("(empty)", fg="yellow", dim=True)
+        else:
+            display = str(v)
+        label = display_labels.get(k, k)
+        click.echo(f"  {label:15}: {display}")
 
 
 def _edit_scalar(metadata: dict, key: str, editor: str, is_int: bool = False) -> None:
@@ -216,6 +204,7 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "p": lambda: _edit_scalar(metadata, "publisher", editor),
             "c": lambda: _edit_scalar(metadata, "country", editor),
             "f": lambda: _edit_scalar(metadata, "frequency", editor),
+            "pg": lambda: _edit_scalar(metadata, "page_count", editor, is_int=True),
             "rt": lambda: _edit_scalar(metadata, "release_type", editor),
             "g": lambda: _edit_list(metadata, "tags", editor),
             "d": lambda: _edit_scalar(metadata, "album_desc", editor),
@@ -223,8 +212,8 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
         }
         menu = (
             "\nRevise metadata? [t]itle [r]elease title [y]ear [v]olume [i]ssue "
-            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]requency [r]elease [t]ype "
-            "[g]enres/tags [d]escription [*]edit ALL (JSON) [n]othing"
+            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]requency [pg]pages "
+            "[rt]release type [g]enres/tags [d]escription [*]edit ALL (JSON) [n]othing"
         )
     else:
         edit_functions = {

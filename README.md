@@ -17,7 +17,7 @@ make run DIR=./my-batch ARGS="--dry-run"   # full dry-run: prompts, cover rehost
 make run DIR=./my-batch                    # real uploads (interactive)
 ```
 
-> Run from the repo root so `python -m simurg` finds `config.toml`. `config.toml` is gitignored — never commit `session`, `announce_url`, or `*.torrent`.
+> Run from the repo root so `python -m simurg` finds `config.toml`. `config.toml` and `.cache/magazine_issns.csv` are gitignored — never commit `session`, `announce_url`, `*.torrent`, or cached ISSNs.
 
 ## Docs
 
@@ -34,6 +34,6 @@ Human-readable wiki lives in `docs/`:
 
 ## What it does (summary)
 
-`up <directory>` loops top-level files and per file: decodes inbuilt metadata, queries scrapers fresh (ISBN → title/author), lets you pick hits and review file-vs-scraper fields, checks Simurg for dupes, rehosts the cover (downscaled ~500×500, PNG→JPG), stages/renames to `{Title} - {Author} (year) [ISBN].ext`, builds a private torrent and uploads it. Single-file torrents only; `.txt` rejected; encrypted PDFs abort.
+`up <directory>` loops top-level files and per file: decodes inbuilt metadata, queries scrapers fresh (ISBN → title/author; magazines reuse `.cache/magazine_issns.csv` exact-title ISSN `1019-5009` when seen before), lets you pick hits and review file-vs-scraper fields (magazines: `OpenAlex` forced gap-fill → manual `S...` paste → Simurg browse fallback for Playboy/Penthouse), checks Simurg for dupes, rehosts the cover (downscaled ~500×500, PNG→JPG), stages/renames to `{Title} - {Author} (year) [ISBN].ext` (magazines: `{Title} - {Issue label} (year).ext`, padded `YYYY-MM-DD`), builds a private torrent (`source:SIM`, `private:1`, `32768`) and uploads it. Single-file torrents only; `.txt` rejected; encrypted PDFs abort.
 
 Full steps, options, and payload details are in `docs/usage.md` and `docs/architecture.md`.

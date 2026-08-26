@@ -11,9 +11,6 @@ from simurg.metadata.enricher import (
     InternetArchiveScraper as _EnrIA,
 )
 from simurg.metadata.enricher import (
-    IssnPortalScraper as _EnrIssn,
-)
-from simurg.metadata.enricher import (
     LibraryOfCongressScraper as _EnrLOC,
 )
 from simurg.metadata.enricher import (
@@ -32,7 +29,6 @@ from simurg.metadata.magazine import (
 )
 from simurg.metadata.scrapers.crossref import CrossrefScraper
 from simurg.metadata.scrapers.internetarchive import InternetArchiveScraper
-from simurg.metadata.scrapers.issnportal import IssnPortalScraper
 from simurg.metadata.scrapers.libraryofcongress import LibraryOfCongressScraper
 from simurg.metadata.scrapers.openlibrary import OpenLibraryScraper
 from simurg.metadata.scrapers.util import clean_issn, issue_label, normalize_issue_date
@@ -264,7 +260,9 @@ def test_compile_new_magazine_payload():
     assert data["magazine_country"] == "United States"
     assert data["magazine_frequency"] == "Monthly"
     assert data["magazine_release_type"] == "Individual Issue"
-    assert data["magazine_issue_date"] == "2020-06"
+    # Tracker validates strictly YYYY-MM-DD even when precision is "month"
+    # (see .failed/Penthouse*.json:30 — "2002-02" rejected). Payload pads to -01.
+    assert data["magazine_issue_date"] == "2020-06-01"
     assert data["magazine_issue_date_precision"] == "month"
     assert data["title"] == "National Geographic - June 2020"
     assert data["bitrate"] == "Retail"
@@ -323,7 +321,7 @@ def test_compile_existing_magazine_payload():
     assert data["publicationid"] == "12862"
     assert "groupid" not in data
     assert data["magazine_release_type"] == "Individual Issue"
-    assert data["magazine_issue_date"] == "2020-06"
+    assert data["magazine_issue_date"] == "2020-06-01"
 
 
 # --- enricher routing ---
@@ -339,7 +337,6 @@ def test_ebook_path_excludes_magazine_only_scrapers():
     session = FakeSession()
     ebook = _scrapers_for(session, {"ebook"})
     names = {s.name for s in ebook}
-    assert "issnportal" not in names
     assert "internetarchive" not in names
     assert "openlibrary" in names  # shared
 
@@ -348,8 +345,8 @@ def test_magazine_path_only_magazine_scrapers():
     session = FakeSession()
     mag = _scrapers_for(session, {"magazine"})
     names = {s.name for s in mag}
-    assert "issnportal" in names
     assert "crossref" in names
+    assert "openalex" in names
     assert "openlibrary" in names  # shared
     assert "googlebooks" not in names
 
@@ -360,25 +357,26 @@ def _cap(s):
 
 def test_search_magazine_scrapers_invokes_only_magazine():
     from simurg.metadata.enricher import LibraryThingScraper as _EnrLT
+    from simurg.metadata.scrapers.openalex import OpenAlexScraper as _EnrOA
     from simurg.metadata.scrapers.wonderclub import WonderClubScraper as _EnrWC
 
     classes = {
-        "issnportal": _EnrIssn,
         "internetarchive": _EnrIA,
         "libraryofcongress": _EnrLOC,
         "crossref": _EnrCrossref,
         "openlibrary": _EnrOL,
         "librarything": _EnrLT,
         "wonderclub": _EnrWC,
+        "openalex": _EnrOA,
     }
     patched = {
-        "issnportal": {"title": "Issn"},
         "internetarchive": {"title": "IA"},
         "libraryofcongress": {"title": "LOC"},
         "crossref": {"title": "CR"},
         "openlibrary": {"title": "OL"},
         "librarything": {"title": "LT"},
         "wonderclub": {"title": "WC"},
+        "openalex": {"title": "OA"},
     }
     originals = {}
     for name, cls in classes.items():
@@ -388,13 +386,13 @@ def test_search_magazine_scrapers_invokes_only_magazine():
         results = search_magazine_scrapers({"canonical_title": "National Geographic", "year": 2020})
         got = {r["_scraper"] for r in results}
         assert got == {
-            "issnportal",
             "internetarchive",
             "libraryofcongress",
             "crossref",
             "openlibrary",
             "librarything",
             "wonderclub",
+            "openalex",
         }
     finally:
         for name, fn in originals.items():
@@ -402,37 +400,6 @@ def test_search_magazine_scrapers_invokes_only_magazine():
 
 
 # --- individual scraper unit tests (mocked) ---
-
-
-def test_issnportal_scraper():
-    sess = FakeSession(
-        by_substr={
-            "portal.issn.org": FakeResponse(
-                200,
-                {
-                    "data": [
-                        {
-                            "title": "National Geographic",
-                            "pissn": "0027-9358",
-                            "eissn": "1936-6618",
-                            "publisher": "National Geographic Society",
-                            "country": "United States",
-                            "frequency": "Monthly",
-                            "startYear": 1888,
-                            "@id": "http://x/1",
-                        }
-                    ]
-                },
-            ),
-        }
-    )
-    sc = IssnPortalScraper(sess)
-    res = sc.search_magazine("National Geographic")
-    assert res["title"] == "National Geographic"
-    assert res["print_issn"] == "0027-9358"
-    assert res["electronic_issn"] == "1936-6618"
-    assert res["first_published"] == 1888
-    assert res["frequency"] == "Monthly"
 
 
 def test_internetarchive_scraper():

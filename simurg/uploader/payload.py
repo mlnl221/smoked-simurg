@@ -26,6 +26,8 @@ them onto the tracker's wire format.
 
 from __future__ import annotations
 
+import re
+
 # Map type string to numeric value from <select name="type">: 2=E-Books
 TYPE_MAP = {
     "E-Book": "2",
@@ -48,6 +50,32 @@ IMPORTANCE_MAP = {
     "illustrators": "6",
     "illustrator": "6",
 }
+
+
+def _magazine_issue_date_for_payload(raw: str | None) -> str:
+    """Normalize magazine issue date to YYYY-MM-DD for Simurg's upload.php.
+
+    Scraper/filename code stores month-precision as ``YYYY-MM`` and year-precision
+    as ``YYYY`` (see ``normalize_issue_date``), but the live tracker validates
+    strictly with ``YYYY-MM-DD`` (``.failed/Penthouse*.json:30`` — ``2002-02``
+    was rejected with ``Enter a valid issue date in YYYY-MM-DD format.``).
+    Pad with ``-01`` / ``-01-01`` so the tracker accepts it; the companion
+    ``magazine_issue_date_precision`` field still tells the tracker the real
+    precision (``month``/``year``/``day``).
+
+    Already-full ``YYYY-MM-DD`` values pass through unchanged.
+    """
+    if not raw:
+        return ""
+    s = str(raw).strip()
+
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return s
+    if re.match(r"^\d{4}-\d{2}$", s):
+        return f"{s}-01"
+    if re.match(r"^\d{4}$", s):
+        return f"{s}-01-01"
+    return s
 
 
 def _build_artists_importance(metadata: dict):
@@ -214,7 +242,7 @@ def compile_data_new_magazine(
         "title": metadata.get("release_title") or metadata.get("title") or "",
         "year": str(metadata.get("year") or ""),
         "magazine_release_type": metadata.get("release_type") or "Individual Issue",
-        "magazine_issue_date": metadata.get("issue_date") or "",
+        "magazine_issue_date": _magazine_issue_date_for_payload(metadata.get("issue_date")),
         "magazine_issue_date_precision": metadata.get("issue_date_precision") or "",
         "magazine_volume": str(metadata.get("volume") or ""),
         "magazine_issue_number": str(metadata.get("issue_number") or ""),
@@ -255,7 +283,7 @@ def compile_data_existing_magazine(
         "title": metadata.get("release_title") or metadata.get("title") or "",
         "year": str(metadata.get("year") or ""),
         "magazine_release_type": metadata.get("release_type") or "Individual Issue",
-        "magazine_issue_date": metadata.get("issue_date") or "",
+        "magazine_issue_date": _magazine_issue_date_for_payload(metadata.get("issue_date")),
         "magazine_issue_date_precision": metadata.get("issue_date_precision") or "",
         "magazine_volume": str(metadata.get("volume") or ""),
         "magazine_issue_number": str(metadata.get("issue_number") or ""),

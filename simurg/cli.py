@@ -1130,6 +1130,410 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             from simurg.metadata.magazine import build_magazine_metadata, validate_magazine_metadata
 
             metadata = build_magazine_metadata(inbuilt, scraper_data, fmt, str(filepath))
+            # [4a.0] .cache/magazine_issns.csv — exact-title reuse.
+            # If we already have an ISSN from scraper/filename, persist it so the
+            # next issue with the same exact title can skip scraping. This is the
+            # warm path for Playboy/Penthouse reused across a batch.
+            try:
+                from simurg.uploader.magazine_issn import save_magazine_issn_cache
+
+                _canon_for_cache = (
+                    metadata.get("canonical_title") or metadata.get("title") or ""
+                ).strip()
+                if _canon_for_cache and (
+                    metadata.get("print_issn") or metadata.get("electronic_issn")
+                ):
+                    save_magazine_issn_cache(
+                        _canon_for_cache,
+                        metadata.get("print_issn"),
+                        metadata.get("electronic_issn"),
+                        source="scraper",
+                    )
+            except Exception:
+                pass
+            # [4a] Forced OpenAlex ISSN gap-fill — magazines only, post-scrape.
+            # Always try to resolve print/electronic ISSN via OpenAlex /sources after the
+            # normal magazine scrapers have run. Fills missing ISSNs only (never
+            # overwrites existing ones) so provenance stays intact. Shows the search
+            # params and, when no match, offers to paste an OpenAlex source URL.
+            if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
+                try:
+                    from simurg.metadata.scrapers.openalex import OpenAlexScraper
+
+                    # [4a.0a] .cache/magazine_issns.csv — exact-title reuse.
+                    # Reuse ISSNs scraped earlier in this batch or a previous run
+                    # for the same exact magazine title (e.g. second "Penthouse"
+                    # issue). This avoids re-scraping Simurg/OpenAlex.
+                    try:
+                        from simurg.uploader.magazine_issn import lookup_magazine_issn_cache
+
+                        _canon_cache = (
+                            metadata.get("canonical_title") or metadata.get("title") or ""
+                        ).strip()
+                        if _canon_cache:
+                            _cached = lookup_magazine_issn_cache(_canon_cache)
+                            if _cached:
+                                _filled_cache = []
+                                for _k in ("print_issn", "electronic_issn"):
+                                    if not metadata.get(_k) and _cached.get(_k):
+                                        metadata[_k] = _cached[_k]
+                                        _filled_cache.append(f"{_k}={_cached[_k]}")
+                                if _filled_cache:
+                                    click.secho(
+                                        f"Using cached ISSN from .cache/magazine_issns.csv for '{_canon_cache}': {', '.join(_filled_cache)}",
+                                        fg="green",
+                                    )
+                    except Exception:
+                        pass
+                    canonical = (
+                        metadata.get("canonical_title") or metadata.get("title") or ""
+                    ).strip()
+                    if canonical and (
+                        not metadata.get("print_issn") or not metadata.get("electronic_issn")
+                    ):
+                        with requests.Session() as _oa_sess:
+                            _oa_scraper = OpenAlexScraper(_oa_sess)
+                            _api_key = _oa_scraper._api_key()
+                            _masked = (
+                                "***" if _api_key else "(missing — set [metadata] openalex_api_key)"
+                            )
+                            # Show the exact query so the user can see why a title may miss (e.g. "Penthouse (USA)")
+                            click.secho(
+                                f"OpenAlex search: GET https://api.openalex.org/sources"
+                                f"  search={canonical!r}  per_page=10  api_key={_masked}",
+                                fg="cyan",
+                            )
+                            patch = _oa_scraper.search_magazine(canonical, None)
+                        if patch:
+                            filled = []
+                            for k in ("print_issn", "electronic_issn"):
+                                if not metadata.get(k) and patch.get(k):
+                                    metadata[k] = patch[k]
+                                    filled.append(f"{k}={patch[k]}")
+                            # Also fill publisher/country if still empty and OpenAlex has them
+                            for k in ("publisher", "country"):
+                                if not metadata.get(k) and patch.get(k):
+                                    metadata[k] = patch[k]
+                            if filled:
+                                click.secho(f"OpenAlex ISSN fill: {', '.join(filled)}", fg="green")
+                                # Persist to .cache/magazine_issns.csv for exact-title reuse.
+                                try:
+                                    from simurg.uploader.magazine_issn import (
+                                        save_magazine_issn_cache,
+                                    )
+
+                                    _canon_save = (
+                                        metadata.get("canonical_title")
+                                        or metadata.get("title")
+                                        or ""
+                                    ).strip()
+                                    if _canon_save:
+                                        save_magazine_issn_cache(
+                                            _canon_save,
+                                            metadata.get("print_issn"),
+                                            metadata.get("electronic_issn"),
+                                            source="openalex",
+                                        )
+                                except Exception:
+                                    pass
+                            else:
+                                # Scraper already had ISSNs or OpenAlex had no new ones
+                                pass
+                            if patch.get("source_urls"):
+                                click.echo(f" OpenAlex source: {patch['source_urls'][0]}")
+                        else:
+                            click.secho(
+                                "OpenAlex: no ISSN match (consumer magazines may be hit-or-miss)",
+                                fg="yellow",
+                            )
+                            if dry_run:
+                                click.secho(
+                                    "Dry-run: skipping manual OpenAlex URL prompt", fg="yellow"
+                                )
+                            else:
+                                click.echo(
+                                    "  [u] Paste an OpenAlex URL (e.g. https://openalex.org/S137355760"
+                                    " or https://api.openalex.org/sources/S137355760) to fetch ISSN manually"
+                                )
+                                click.echo("  [Enter] Keep without ISSN  |  [a] Abort all")
+                                try:
+                                    choice = click.prompt(
+                                        "OpenAlex URL", type=str, default="", show_default=False
+                                    ).strip()
+                                except click.Abort:
+                                    raise
+                                if choice.lower() in ("a", "abort"):
+                                    raise click.Abort
+                                pasted_url = ""
+                                if choice.lower() in ("u", "url"):
+                                    try:
+                                        pasted_url = click.prompt(
+                                            "Paste OpenAlex source URL", type=str
+                                        ).strip()
+                                    except click.Abort:
+                                        raise
+                                elif choice.startswith("http") or choice.startswith("S"):
+                                    pasted_url = choice
+                                elif choice:
+                                    # treat any non-empty non-http as possible ID/URL fragment
+                                    pasted_url = choice
+                                if pasted_url:
+                                    # Normalize bare S ID to full URL
+                                    if pasted_url.startswith("S") and not pasted_url.startswith(
+                                        "http"
+                                    ):
+                                        pasted_url = f"https://openalex.org/{pasted_url}"
+                                    try:
+                                        with requests.Session() as _oa_sess2:
+                                            _oa_scraper2 = OpenAlexScraper(_oa_sess2)
+                                            url_patch = _oa_scraper2.search_url(pasted_url)
+                                        if url_patch:
+                                            filled2 = []
+                                            for k in ("print_issn", "electronic_issn"):
+                                                if not metadata.get(k) and url_patch.get(k):
+                                                    metadata[k] = url_patch[k]
+                                                    filled2.append(f"{k}={url_patch[k]}")
+                                            for k in ("publisher", "country"):
+                                                if not metadata.get(k) and url_patch.get(k):
+                                                    metadata[k] = url_patch[k]
+                                            if filled2:
+                                                click.secho(
+                                                    f"OpenAlex manual URL fill: {', '.join(filled2)}",
+                                                    fg="green",
+                                                )
+                                                # Persist manual OpenAlex URL result too.
+                                                try:
+                                                    from simurg.uploader.magazine_issn import (
+                                                        save_magazine_issn_cache,
+                                                    )
+
+                                                    _canon_save2 = (
+                                                        metadata.get("canonical_title")
+                                                        or metadata.get("title")
+                                                        or ""
+                                                    ).strip()
+                                                    if _canon_save2:
+                                                        save_magazine_issn_cache(
+                                                            _canon_save2,
+                                                            metadata.get("print_issn"),
+                                                            metadata.get("electronic_issn"),
+                                                            source="openalex_url",
+                                                        )
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                click.secho(
+                                                    "OpenAlex URL resolved but had no new ISSNs to fill",
+                                                    fg="yellow",
+                                                )
+                                            if url_patch.get("source_urls"):
+                                                click.echo(
+                                                    f" OpenAlex source: {url_patch['source_urls'][0]}"
+                                                )
+                                        else:
+                                            click.secho(
+                                                f"Could not resolve OpenAlex URL to ISSN: {pasted_url}",
+                                                fg="yellow",
+                                            )
+                                    except click.Abort:
+                                        raise
+                                    except Exception as e:
+                                        click.secho(f"OpenAlex URL lookup failed: {e}", fg="yellow")
+                except click.Abort:
+                    raise
+                except Exception as e:
+                    click.secho(f"OpenAlex ISSN lookup failed: {e}", fg="yellow")
+                # [4a.1] Simurg fallback when OpenAlex yields nothing — search Simurg
+                # for an existing magazine (Playboy/Penthouse etc.) and offer its
+                # ISSNs for direct reuse (option A). Only when still missing ISSN
+                # after the forced OpenAlex pass.
+                if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
+                    try:
+                        from simurg.uploader.magazine_issn import (
+                            prompt_simurg_issn_reuse,
+                            search_simurg_magazine_issns,
+                        )
+
+                        # Need an authenticated tracker session
+                        _can_search = bool(
+                            gazelle_site and getattr(gazelle_site, "authkey", "dummy") != "dummy"
+                        )
+                        if not _can_search:
+                            if dry_run:
+                                click.secho(
+                                    "Dry-run: skipping Simurg ISSN search (no authenticated session)",
+                                    fg="yellow",
+                                )
+                            else:
+                                click.secho(
+                                    "Skipping Simurg ISSN search (no authenticated session)",
+                                    fg="yellow",
+                                )
+                        else:
+                            canonical = (
+                                metadata.get("canonical_title") or metadata.get("title") or ""
+                            ).strip()
+                            if canonical:
+                                click.secho(
+                                    f"OpenAlex returned nothing — searching Simurg for existing '{canonical}' magazines…",
+                                    fg="cyan",
+                                )
+                                candidates = search_simurg_magazine_issns(
+                                    gazelle_site, canonical, limit=10
+                                )
+                                if not candidates:
+                                    click.secho(
+                                        f"No existing Simurg magazine found matching '{canonical}' (no ISSN to reuse).",
+                                        fg="yellow",
+                                    )
+                                else:
+                                    click.secho(
+                                        f"Found {len(candidates)} existing magazine(s) on Simurg matching '{canonical}':",
+                                        fg="cyan",
+                                        bold=True,
+                                    )
+                                    for idx, cand in enumerate(candidates, 1):
+                                        issn_parts = []
+                                        if cand.get("print_issn"):
+                                            issn_parts.append(f"print {cand['print_issn']}")
+                                        if cand.get("electronic_issn"):
+                                            issn_parts.append(
+                                                f"electronic {cand['electronic_issn']}"
+                                            )
+                                        issn_str = (
+                                            " / ".join(issn_parts) if issn_parts else "no ISSN"
+                                        )
+                                        title = cand.get("title") or "?"
+                                        year = cand.get("year") or "?"
+                                        pub = cand.get("publisher") or ""
+                                        line = f"  [{idx}] {title} ({year}) — {issn_str}"
+                                        if pub:
+                                            line += f" · {pub}"
+                                        line += f"  {fmt_url(cand.get('url') or '')}"
+                                        click.echo(line)
+                                    if dry_run:
+                                        # Dry-run: auto-apply first candidate's ISSNs without extra prompts inside helper
+                                        click.secho(
+                                            "Dry-run: auto-using first Simurg candidate's ISSNs (no prompts)",
+                                            fg="yellow",
+                                        )
+                                        chosen = candidates[0]
+                                        overrides = prompt_simurg_issn_reuse(
+                                            metadata, chosen, dry_run=True
+                                        )
+                                        for k, v in overrides.items():
+                                            metadata[k] = v
+                                        if overrides:
+                                            click.secho(
+                                                f"Applied Simurg ISSN overrides (dry-run): {overrides}",
+                                                fg="green",
+                                            )
+                                            try:
+                                                from simurg.uploader.magazine_issn import (
+                                                    save_magazine_issn_cache,
+                                                )
+
+                                                _canon_s = (
+                                                    metadata.get("canonical_title")
+                                                    or metadata.get("title")
+                                                    or ""
+                                                ).strip()
+                                                if _canon_s:
+                                                    save_magazine_issn_cache(
+                                                        _canon_s,
+                                                        metadata.get("print_issn"),
+                                                        metadata.get("electronic_issn"),
+                                                        source="simurg",
+                                                    )
+                                            except Exception:
+                                                pass
+                                    else:
+                                        # Interactive pick
+                                        click.echo(
+                                            "  [i] Keep without Simurg ISSN  |  [s] Skip this file  |  [a] Abort all"
+                                        )
+                                        while True:
+                                            ans = (
+                                                click.prompt(
+                                                    "Choose Simurg entry to reuse ISSN from",
+                                                    type=str,
+                                                    default="",
+                                                    show_default=False,
+                                                )
+                                                .strip()
+                                                .lower()
+                                            )
+                                            if ans in ("i", "inbuilt", "n", ""):
+                                                click.secho(
+                                                    "Keeping without Simurg ISSN.", fg="yellow"
+                                                )
+                                                break
+                                            if ans in ("s", "skip"):
+                                                click.secho(
+                                                    f"Skipping file {filepath.name} per user choice",
+                                                    fg="yellow",
+                                                )
+                                                skipped += 1
+                                                # Need to signal skip of this file to outer loop
+                                                # Use a sentinel via metadata flag; handle after this block
+                                                metadata["_simurg_skip_file"] = True  # type: ignore
+                                                break
+                                            if ans in ("a", "abort"):
+                                                raise click.Abort
+                                            if ans.isdigit():
+                                                n = int(ans)
+                                                if 1 <= n <= len(candidates):
+                                                    chosen = candidates[n - 1]
+                                                    overrides = prompt_simurg_issn_reuse(
+                                                        metadata, chosen, dry_run=False
+                                                    )
+                                                    for k, v in overrides.items():
+                                                        metadata[k] = v
+                                                    if overrides:
+                                                        click.secho(
+                                                            f"Applied Simurg ISSN overrides: {overrides}",
+                                                            fg="green",
+                                                        )
+                                                        try:
+                                                            from simurg.uploader.magazine_issn import (
+                                                                save_magazine_issn_cache,
+                                                            )
+
+                                                            _canon_s2 = (
+                                                                metadata.get("canonical_title")
+                                                                or metadata.get("title")
+                                                                or ""
+                                                            ).strip()
+                                                            if _canon_s2:
+                                                                save_magazine_issn_cache(
+                                                                    _canon_s2,
+                                                                    metadata.get("print_issn"),
+                                                                    metadata.get("electronic_issn"),
+                                                                    source="simurg",
+                                                                )
+                                                        except Exception:
+                                                            pass
+                                                    else:
+                                                        click.secho(
+                                                            "No ISSN overrides applied.",
+                                                            fg="yellow",
+                                                        )
+                                                    break
+                                            click.secho(
+                                                f"Invalid choice — pick 1-{len(candidates)}, i, s or a.",
+                                                fg="yellow",
+                                            )
+                                        if metadata.get("_simurg_skip_file"):
+                                            # inner loop already broke; keep flag for outer continue
+                                            pass
+                    except click.Abort:
+                        raise
+                    except Exception as e:
+                        click.secho(f"Simurg ISSN fallback failed: {e}", fg="yellow")
+                # If Simurg picker requested file skip, jump to next file.
+                if metadata.get("_simurg_skip_file"):
+                    metadata.pop("_simurg_skip_file", None)
+                    continue
         else:
             from simurg.metadata.combine import build_metadata, validate_metadata
 
@@ -1647,8 +2051,34 @@ def checkconf():
         except Exception as e:
             click.secho(f"Scraper {name}: FAILED - {e}", fg="yellow")
 
+    # OpenAlex probe (magazine-only ISSN via /sources)
+    try:
+        from simurg.config import get_config as _cfg2
+
+        _oa_key = str(_cfg2().metadata.get("openalex_api_key", "") or "").strip()
+        if not _oa_key:
+            click.secho("Scraper openalex: SKIPPED (no openalex_api_key in config)", fg="yellow")
+        else:
+            from simurg.metadata.scrapers.openalex import OpenAlexScraper
+
+            sc = OpenAlexScraper()
+            r = sc.search_magazine("National Geographic")
+            if r and (r.get("print_issn") or r.get("electronic_issn")):
+                click.secho(
+                    f"Scraper openalex: OK (found ISSN {r.get('print_issn') or r.get('electronic_issn')} for {r.get('title')})",
+                    fg="green",
+                )
+            elif r:
+                click.secho(
+                    f"Scraper openalex: OK (found {r.get('title')} but no ISSN)", fg="yellow"
+                )
+            else:
+                click.secho("Scraper openalex: OK (no result but reachable)", fg="green")
+    except Exception as e:
+        click.secho(f"Scraper openalex: FAILED - {e}", fg="yellow")
+
     # Declared elsewhere in the pipeline but not probed by checkconf
-    for name in ("issnportal", "librarything", "internetarchive", "libraryofcongress", "crossref"):
+    for name in ("librarything", "internetarchive", "libraryofcongress", "crossref"):
         click.secho(f"Scraper {name}: SKIPPED (not exercised by checkconf)", fg="yellow")
 
     click.secho("=== checkconf done ===", fg="cyan")

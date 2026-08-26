@@ -20,9 +20,9 @@ from simurg.metadata.scrapers.bookbrainz import BookBrainzScraper
 from simurg.metadata.scrapers.crossref import CrossrefScraper
 from simurg.metadata.scrapers.googlebooks import GoogleBooksScraper
 from simurg.metadata.scrapers.internetarchive import InternetArchiveScraper
-from simurg.metadata.scrapers.issnportal import IssnPortalScraper
 from simurg.metadata.scrapers.libraryofcongress import LibraryOfCongressScraper
 from simurg.metadata.scrapers.librarything import LibraryThingScraper
+from simurg.metadata.scrapers.openalex import OpenAlexScraper
 from simurg.metadata.scrapers.openlibrary import OpenLibraryScraper
 from simurg.metadata.scrapers.penguinrandomhouse import PenguinRandomHouseScraper
 from simurg.metadata.scrapers.wonderclub import WonderClubScraper
@@ -62,10 +62,10 @@ def _all_scrapers(session: requests.Session):
         LibraryThingScraper(session),
         WonderClubScraper(session),
         # Magazine-only scrapers (tagged {"magazine"}; excluded from ebook path)
-        IssnPortalScraper(session),
         InternetArchiveScraper(session),
         LibraryOfCongressScraper(session),
         CrossrefScraper(session),
+        OpenAlexScraper(session),
     ]
 
 

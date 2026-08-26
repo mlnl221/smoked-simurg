@@ -14,6 +14,7 @@ catbox_userhash = ""  # optional
 googlebooks_key = ""
 cover_fallback_duckduckgo = true
 librarything_token = ""  # LibraryThing Talpa API token (also used as REST apikey)
+openalex_api_key = ""  # OpenAlex /sources API key (free, https://openalex.org/settings/api) — required for ISSN lookup
 
 [tracker.simurg]
 session = ""          # browser cookie

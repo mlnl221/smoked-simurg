@@ -27,7 +27,7 @@ cp config.example.toml config.toml
 # edit config.toml — fill tracker session, announce_url, image keys
 ```
 
-`config.toml` is gitignored (`AGENTS.md`, `.gitignore`). Never commit it, `*.torrent`, or a personal `https://tracker.simurg.world/.../announce`. `config.example.toml` stays blank and is safe to commit. The loader looks for `./config.toml`, then `simurg/../config.toml` (`simurg/config.py:9-18`).
+`config.toml` and `.cache/magazine_issns.csv` are gitignored (`AGENTS.md`, `.gitignore`). Never commit `config.toml`, `*.torrent`, `.cache/`, or a personal `https://tracker.simurg.world/.../announce`. `config.example.toml` stays blank and is safe to commit. The loader looks for `./config.toml`, then `simurg/../config.toml` (`simurg/config.py:9-18`). `.cache/` is created on demand for exact-title magazine ISSN reuse (`uploader/magazine_issn.py`).
 
 Minimal working config for a dry run:
 
@@ -84,7 +84,9 @@ Style: Python 3.11+, 4-space indent, double quotes, no semicolons, PEP 8. Config
 ## Clean
 
 ```bash
-make clean   # removes __pycache__, .torrents, .failed, .pytest_cache; keeps .venv
+make clean   # removes __pycache__, .torrents, .failed, .pytest_cache; keeps .venv and .cache
+# to also clear the ISSN cache:
+rm -rf .cache
 ```
 
 ## Tests

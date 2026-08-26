@@ -57,3 +57,8 @@ This file records past failures for this project. Agents must read it before sta
 - **Why it happened**: Repo uses a local venv; no global python on PATH.
 - **How to avoid next time**: Always use `.venv/bin/python` / `.venv/bin/ruff` / `.venv/bin/pytest` from repo root.
 
+### 2026-08-26
+- **What happened**: Magazine upload `Penthouse - February 2002 Vol 33 Issue 6 (2002)` failed in `.failed/` with `{"status":"failure","error":"Enter a valid issue date in YYYY-MM-DD format."}`. Payload had `magazine_issue_date: "2002-02"` and `magazine_issue_date_precision: "month"`.
+- **Why it happened**: `simurg/uploader/payload.py:217` / `:258` passed `metadata["issue_date"]` straight through. Internally magazines store month-precision as `YYYY-MM` and year-precision as `YYYY` (`metadata/magazine.py`, `scrapers/util.py:normalize_issue_date`), but Simurg's `upload.php` validates strictly `YYYY-MM-DD` regardless of `magazine_issue_date_precision`. Tests in `tests/test_magazine.py:263,322` also asserted the unpadded `2020-06`.
+- **How to avoid next time**: Always pad magazine `issue_date` in the payload layer to `YYYY-MM-DD` (`YYYY-MM` → `YYYY-MM-01`, `YYYY` → `YYYY-01-01`) while keeping `magazine_issue_date_precision` as the true precision. Add helper `_magazine_issue_date_for_payload()` in `payload.py` and use it in both `compile_data_new_magazine` and `compile_data_existing_magazine`.
+

@@ -15,6 +15,7 @@ from simurg.metadata.enricher import (
 def _stub_penguinrandomhouse(monkeypatch):
     """Keep the PRH scraper offline by default; individual tests may override."""
     from simurg.metadata.scrapers.librarything import LibraryThingScraper
+    from simurg.metadata.scrapers.openalex import OpenAlexScraper
     from simurg.metadata.scrapers.penguinrandomhouse import PenguinRandomHouseScraper
     from simurg.metadata.scrapers.wonderclub import WonderClubScraper
 
@@ -29,6 +30,10 @@ def _stub_penguinrandomhouse(monkeypatch):
     monkeypatch.setattr(WonderClubScraper, "search_title_author", lambda s, *a, **k: None)
     monkeypatch.setattr(WonderClubScraper, "search_url", lambda s, *a, **k: None)
     monkeypatch.setattr(WonderClubScraper, "search_magazine", lambda s, *a, **k: None)
+    monkeypatch.setattr(OpenAlexScraper, "search_magazine", lambda s, *a, **k: None)
+    monkeypatch.setattr(OpenAlexScraper, "search_isbn", lambda s, *a, **k: None)
+    monkeypatch.setattr(OpenAlexScraper, "search_title_author", lambda s, *a, **k: None)
+    monkeypatch.setattr(OpenAlexScraper, "search_url", lambda s, *a, **k: None)
 
 
 def test_search_all_scrapers_collects_every_hit(monkeypatch):
@@ -282,6 +287,7 @@ def test_supported_url_domains_lists_scrapers():
     assert "abebooks.com" in domains
     assert "archive.org" in domains
     assert "loc.gov" in domains
+    assert "openalex.org" in domains
     assert "example.com" not in domains
 
 
