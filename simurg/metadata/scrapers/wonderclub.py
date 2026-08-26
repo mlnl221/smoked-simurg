@@ -192,7 +192,14 @@ class WonderClubScraper(BaseScraper):
         return res
 
     def search_url(self, url: str) -> dict | None:
-        """Resolve a pasted wonderclub book page URL."""
+        """Resolve a pasted wonderclub book/magazine page URL.
+
+        Accepts:
+        - /books/<slug>
+        - /magazines/<slug>  (e.g. /magazines/penthouse-february-2002)
+        - /<isbn> / numeric slugs
+        www. prefix is allowed via BaseScraper.match_url semantics.
+        """
         try:
             parsed = urlparse(url)
         except Exception:
@@ -200,11 +207,16 @@ class WonderClubScraper(BaseScraper):
         if "wonderclub.com" not in (parsed.netloc or "").lower():
             return None
         path = parsed.path or ""
-        # Accept /books/<slug> and /<isbn> style
-        if not re.search(r"/books/[^/]+", path) and not re.search(r"/\d{6,}", path):
-            # Still allow any wonderclub.com/books/* or numeric slug; be lenient
-            if "/books/" not in path and not re.match(r"/[^/]{3,}$", path):
-                return None
+        # Explicitly reject search / api endpoints (not product pages)
+        if path.startswith("/search_results.php") or path.startswith("/books/bookbytitleexp.php"):
+            return None
+        # Accept /books/<slug> and /magazines/<slug> and /<isbn> style
+        if (
+            not re.search(r"/books/[^/]+", path)
+            and not re.search(r"/magazines/[^/]+", path)
+            and not re.search(r"/\d{6,}", path)
+        ):
+            return None
         return self._fetch_and_parse(url)
 
 
@@ -229,8 +241,8 @@ def _parse_search_results(html: str, base: str) -> list[dict]:
         href = a["href"]
         if not href:
             continue
-        # Must look like a record URL
-        if "/books/" not in href and not re.search(r"/\d{6,}", href):
+        # Must look like a record URL (books or magazines)
+        if "/books/" not in href and "/magazines/" not in href and not re.search(r"/\d{6,}", href):
             continue
         # Skip navigation / tab anchors
         if href.startswith("#"):
@@ -316,13 +328,43 @@ def _parse_page(html: str, url: str) -> dict | None:
     og = _extract_og(soup)
 
     # Title: prefer logical page title, not raw details noise
+    # For magazines, "Title of Series" is the canonical periodical title (keep verbatim, e.g. "Penthouse (USA)")
     title = None
-    # h1 is most reliable for wonderclub book pages
-    for sel in ("h1", ".product-title", ".book-title", "h1.product-name"):
-        el = soup.select_one(sel)
-        if el and _clean_text(el.get_text()):
-            title = _clean_text(el.get_text())
-            break
+    if details.get("Title of Series"):
+        title = _clean_text(details["Title of Series"])
+    if not title:
+        # h1 is most reliable for wonderclub book pages; for magazines h1 contains
+        # "<issue> <a>Magazine</a>" so extract first <a> to avoid trailing " Magazine"
+        for sel in ("h1", ".product-title", ".book-title", "h1.product-name"):
+            el = soup.select_one(sel)
+            if el and _clean_text(el.get_text()):
+                # Prefer first anchor text when h1 has "Title Magazine" pattern
+                first_a = el.find("a")
+                if first_a and _clean_text(first_a.get_text()):
+                    # If h1 has two links (issue + "Magazine"), first is the issue title
+                    candidate = _clean_text(first_a.get_text())
+                    # Only use first-a if it looks like title and not just "Magazine"
+                    if candidate.lower() != "magazine" and len(candidate) > 3:
+                        # If second anchor is "Magazine", this candidate is correct issue title
+                        # but for magazines we already used Title of Series above, so fallback is issue title
+                        title = (
+                            candidate
+                            if details.get("Title of Series")
+                            else _clean_text(el.get_text())
+                        )
+                        # Strip trailing " Magazine" suffix if present and details Title exists
+                        if title.endswith(" Magazine") and details.get("Title"):
+                            title = title[: -len(" Magazine")].strip()
+                        else:
+                            title = _clean_text(el.get_text())
+                    else:
+                        title = _clean_text(el.get_text())
+                else:
+                    title = _clean_text(el.get_text())
+                # Strip trailing category suffix added via second <a>Magazine</a>
+                if title.endswith(" Magazine") and details.get("Title"):
+                    title = details.get("Title") or title[: -len(" Magazine")].strip()
+                break
     if not title:
         title = og.get("og:title") or jsonld.get("name") or details.get("Title") or ""
     title = title.strip() if title else ""
@@ -432,9 +474,18 @@ def _parse_page(html: str, url: str) -> dict | None:
         publisher = publisher.get("name") or ""
     publisher = _clean_text(publisher) if publisher else ""
 
-    # Year
+    # Year / Publication Date (magazines use "Publication Date: February 2002")
     year = None
-    raw_year = details.get("Publication Year") or details.get("Year") or ""
+    raw_year = (
+        details.get("Publication Date")
+        or details.get("Publication Year")
+        or details.get("Year")
+        or ""
+    )
+    # Fallback: meta itemprop datePublished (e.g. <meta itemprop="datePublished" content="February 2002">)
+    meta_date = soup.find("meta", attrs={"itemprop": "datePublished"})
+    if not raw_year and meta_date and meta_date.get("content"):
+        raw_year = _clean_text(meta_date["content"])
     if raw_year:
         year = year_from(raw_year)
     if not year and jsonld.get("datePublished"):
@@ -444,7 +495,7 @@ def _parse_page(html: str, url: str) -> dict | None:
         for v in details.values():
             y = year_from(str(v))
             if y and 1000 <= y <= 2100:
-                # prefer Publication Year already tried
+                # prefer Publication Date/Year already tried
                 pass
 
     # ISSN (rare on WonderClub, but check)
@@ -454,6 +505,54 @@ def _parse_page(html: str, url: str) -> dict | None:
             print_issn = clean_issn(str(v))
             if print_issn:
                 break
+
+    # Magazine Volume / Issue — prefer structured itemprop, fallback to details text
+    volume = None
+    issue_number = None
+    vol_el = soup.select_one('[itemprop="volumeNumber"]')
+    if vol_el and _clean_text(vol_el.get_text()):
+        volume = _clean_text(vol_el.get_text())
+    iss_el = soup.select_one('[itemprop="issueNumber"]')
+    if iss_el and _clean_text(iss_el.get_text()):
+        issue_number = _clean_text(iss_el.get_text())
+    # Fallback: parse "Volume: 33, Issue: 6" combined value in details["Volume"]
+    if not volume and details.get("Volume"):
+        # details["Volume"] may be "33, Issue: 6" due to combined <p>
+        vol_raw = details.get("Volume") or ""
+        m = re.search(r"^\s*(\d+)", vol_raw)
+        if m:
+            volume = m.group(1)
+        # Also try to recover Issue from same string if itemprop missing
+        if not issue_number and "Issue" in vol_raw:
+            m2 = re.search(r"Issue:\s*(\d+)", vol_raw)
+            if m2:
+                issue_number = m2.group(1)
+    if not issue_number and details.get("Issue"):
+        issue_number = _clean_text(details.get("Issue"))
+
+    # WSKU / Item Number — keep verbatim for magazines (e.g. PENT200202)
+    wsku = None
+    for key in (
+        "Item Number",
+        "WonderClub Stock Keeping Unit (WSKU)",
+        "WSKU",
+        "Universal Product Code (UPC)",
+    ):
+        if details.get(key):
+            wsku = _clean_text(details.get(key))
+            if key == "WonderClub Stock Keeping Unit (WSKU)" and details.get("Item Number"):
+                # Prefer Item Number over WSKU when both exist (they are same for magazines)
+                wsku = _clean_text(details.get("Item Number"))
+            break
+    # Also fallback to meta sku / itemprop sku if missing
+    if not wsku:
+        sku_el = soup.select_one('[itemprop="sku"]')
+        if sku_el and _clean_text(sku_el.get_text()):
+            wsku = _clean_text(sku_el.get_text())
+        else:
+            sku_meta = soup.find("meta", attrs={"itemprop": "sku"})
+            if sku_meta and sku_meta.get("content"):
+                wsku = _clean_text(sku_meta["content"])
 
     # Category -> tags
     raw_category = details.get("Category") or ""
@@ -477,6 +576,10 @@ def _parse_page(html: str, url: str) -> dict | None:
         "cover_url": cover_url or None,
         "source_urls": [url],
         "details": details,
+        # Preserve WSKU / Item Number verbatim (user requested extraction)
+        "wsku": wsku,
+        "item_number": wsku,
+        "sku": wsku,
         # Magazine-compatible mirrors
         "print_issn": print_issn,
         "electronic_issn": None,
@@ -484,11 +587,11 @@ def _parse_page(html: str, url: str) -> dict | None:
         "frequency": None,
         "issue_date": None,
         "issue_date_precision": None,
-        "volume": None,
-        "issue_number": None,
+        "volume": volume,
+        "issue_number": issue_number,
     }
 
-    # Magazine issue_date from Publication Year when possible
+    # Magazine issue_date from Publication Date/Year when possible
     if raw_year:
         norm, prec = normalize_issue_date(str(raw_year))
         if norm:
@@ -567,11 +670,14 @@ def _extract_details(soup: BeautifulSoup) -> dict:
 
     # 4. Fallback: any element with "Label: Value" pattern inside panel not yet captured
     if not details:
-        # Last resort: split panel text by lines that look like labels
-        for elem in panel.find_all(["div", "p", "li", "span"]):
+        # Last resort: split panel text by lines that look like labels (only block elements to avoid inner span URL fragments)
+        for elem in panel.find_all(["div", "p", "li"]):
             txt = _clean_text(elem.get_text(" ", strip=True))
             if ":" in txt and len(txt) < 200:
                 k, v = [p.strip() for p in txt.split(":", 1)]
+                # skip URL scheme fragments like "https: //..."
+                if k.lower() in ("https", "http") or "://" in k:
+                    continue
                 if k and v and len(k) < 40 and k not in details:
                     details[k] = v
 
@@ -580,8 +686,26 @@ def _extract_details(soup: BeautifulSoup) -> dict:
         txt = _clean_text(li.get_text(" ", strip=True))
         if ":" in txt and len(txt) < 200:
             k, v = [p.strip() for p in txt.split(":", 1)]
+            if k.lower() in ("https", "http") or "://" in k:
+                continue
             if k and v and k not in details:
                 details[k] = v
+
+    # 6. Post-process combined "Volume: 33, Issue: 6" case (single <p> holds both)
+    # The fallback stores Volume="33, Issue: 6" — split into separate keys
+    if "Volume" in details and "Issue" not in details and "Issue:" in details["Volume"]:
+        vol_val = details["Volume"]
+        # vol_val e.g. "33, Issue: 6" or "33, Issue:6"
+        m_vol = re.search(r"^\s*(\d+)", vol_val)
+        m_iss = re.search(r"Issue:\s*(\d+)", vol_val)
+        if m_vol:
+            details["Volume"] = m_vol.group(1)
+        if m_iss:
+            details["Issue"] = m_iss.group(1)
+    # Remove spurious URL-scheme keys
+    details.pop("https", None)
+    details.pop("http", None)
+    # Also handle publication date split if needed, but keep verbatim
 
     return details
 
