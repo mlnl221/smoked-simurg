@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 from simurg.uploader.magazine_issn import (
     _extract_issns,
+    lookup_magazine_issn_cache,
     prompt_simurg_issn_reuse,
+    save_magazine_issn_cache,
     search_simurg_magazine_issns,
 )
 
@@ -225,3 +225,108 @@ def test_prompt_decline(monkeypatch):
     monkeypatch.setattr("simurg.uploader.magazine_issn.click.prompt", lambda *a, **k: next(answers))
     overrides = prompt_simurg_issn_reuse(metadata, chosen, dry_run=False)
     assert overrides == {}
+
+
+# --- .cache/magazine_issns.csv exact-title reuse ---
+
+
+def test_cache_save_and_lookup(tmp_path, monkeypatch):
+    import simurg.uploader.magazine_issn as mi
+
+    cache_file = tmp_path / "magazine_issns.csv"
+    monkeypatch.setattr(mi, "CACHE_FILE", cache_file)
+    monkeypatch.setattr(mi, "CACHE_DIR", tmp_path)
+
+    # Initially miss
+    assert lookup_magazine_issn_cache("Penthouse") is None
+
+    # Save example from prompt: 1019-5009 for both
+    ok = save_magazine_issn_cache("Penthouse", "1019-5009", "1019-5009", source="simurg")
+    assert ok
+    assert cache_file.exists()
+
+    # Exact title (case-insensitive) hit
+    cached = lookup_magazine_issn_cache("Penthouse")
+    assert cached is not None
+    assert cached["print_issn"] == "1019-5009"
+    assert cached["electronic_issn"] == "1019-5009"
+    assert cached["issn"] == "1019-5009"
+    assert cached["issn_l"] == "1019-5009"
+
+    # Different case still hits (exact-title semantics casefold)
+    cached2 = lookup_magazine_issn_cache("penthouse")
+    assert cached2 is not None
+    assert cached2["print_issn"] == "1019-5009"
+
+    # Different title misses
+    assert lookup_magazine_issn_cache("Playboy") is None
+
+
+def test_cache_exact_title_not_substring(tmp_path, monkeypatch):
+    import simurg.uploader.magazine_issn as mi
+
+    cache_file = tmp_path / "magazine_issns.csv"
+    monkeypatch.setattr(mi, "CACHE_FILE", cache_file)
+    monkeypatch.setattr(mi, "CACHE_DIR", tmp_path)
+
+    save_magazine_issn_cache("Playboy", "0032-1478", "1939-1234")
+    # "Playboy USA" should not match "Playboy"
+    assert lookup_magazine_issn_cache("Playboy USA") is None
+    assert lookup_magazine_issn_cache("Playboy") is not None
+
+
+def test_cache_update_existing(tmp_path, monkeypatch):
+    import simurg.uploader.magazine_issn as mi
+
+    cache_file = tmp_path / "magazine_issns.csv"
+    monkeypatch.setattr(mi, "CACHE_FILE", cache_file)
+    monkeypatch.setattr(mi, "CACHE_DIR", tmp_path)
+
+    save_magazine_issn_cache("Penthouse", "1111-1111", "2222-2222", source="openalex")
+    # Update same title with new ISSN
+    save_magazine_issn_cache("Penthouse", "1019-5009", "1019-5009", source="simurg")
+    cached = lookup_magazine_issn_cache("Penthouse")
+    assert cached["print_issn"] == "1019-5009"
+    assert cached["electronic_issn"] == "1019-5009"
+    assert cached["source"] == "simurg"
+    # File should have only 1 data row + header
+    content = cache_file.read_text(encoding="utf-8")
+    assert content.count("Penthouse") == 1
+
+
+def test_cache_save_normalizes_issn(tmp_path, monkeypatch):
+    import simurg.uploader.magazine_issn as mi
+
+    cache_file = tmp_path / "magazine_issns.csv"
+    monkeypatch.setattr(mi, "CACHE_FILE", cache_file)
+    monkeypatch.setattr(mi, "CACHE_DIR", tmp_path)
+
+    # Noisy input still normalized
+    save_magazine_issn_cache("TestMag", "ISSN 1019-5009 ", " 1019-5009 ")
+    cached = lookup_magazine_issn_cache("TestMag")
+    assert cached["print_issn"] == "1019-5009"
+
+
+def test_cache_second_magazine_reuses_without_scrape(tmp_path, monkeypatch):
+    """Second file with same exact title should hit cache and not need Simurg/OpenAlex."""
+    import simurg.uploader.magazine_issn as mi
+
+    cache_file = tmp_path / "magazine_issns.csv"
+    monkeypatch.setattr(mi, "CACHE_FILE", cache_file)
+    monkeypatch.setattr(mi, "CACHE_DIR", tmp_path)
+
+    # Simulate first issue scraped and cached
+    save_magazine_issn_cache("Penthouse", "1019-5009", "1019-5009", source="simurg")
+    # Simulate second issue: metadata has no ISSN but same title
+    metadata = {"canonical_title": "Penthouse", "print_issn": None, "electronic_issn": None}
+    cached = lookup_magazine_issn_cache(metadata["canonical_title"])
+    assert cached is not None
+    # Fill logic as in cli.py
+    filled = []
+    for k in ("print_issn", "electronic_issn"):
+        if not metadata.get(k) and cached.get(k):
+            metadata[k] = cached[k]
+            filled.append(f"{k}={cached[k]}")
+    assert metadata["print_issn"] == "1019-5009"
+    assert metadata["electronic_issn"] == "1019-5009"
+    assert len(filled) == 2

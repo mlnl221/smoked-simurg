@@ -1,7 +1,5 @@
 """Tests for WonderClub magazine /magazines/* URL support."""
 
-import pytest
-
 from simurg.metadata.scrapers.wonderclub import (
     WonderClubScraper,
     _parse_page,
@@ -155,11 +153,13 @@ def test_parse_page_combined_volume_issue_fallback():
 
 
 def test_enricher_search_by_url_routes_to_wonderclub(monkeypatch):
-    from simurg.metadata.enricher import search_by_url
     import requests
 
+    from simurg.metadata.enricher import search_by_url
+
     # Stub WonderClubScraper.search_url directly (bypass network + ratelimit)
-    from simurg.metadata.scrapers.wonderclub import WonderClubScraper as WCS, _parse_page
+    from simurg.metadata.scrapers.wonderclub import WonderClubScraper as WCS
+    from simurg.metadata.scrapers.wonderclub import _parse_page
 
     def fake_search_url(self, url):
         if "penthouse-february-2002" in url:

@@ -9,7 +9,9 @@ plus a 'use one for both' question when only one distinct ISSN exists).
 from __future__ import annotations
 
 import asyncio
+import csv
 import re
+from pathlib import Path
 
 import click
 
@@ -17,6 +19,137 @@ from simurg.constants import fmt_url
 from simurg.metadata.scrapers.util import clean_issn
 
 loop = asyncio.get_event_loop()
+
+# --- Cache: .cache/magazine_issns.csv (gitignored) ---------------------------
+# Exact-title reuse: if a magazine with this exact canonical title was seen
+# before, reuse its ISSNs without scraping again. CSV columns: title,
+# print_issn, electronic_issn, issn, issn_l, source. `title` is matched
+# case-insensitively after stripping (exact title semantics: "Playboy" ==
+# "playboy" but not "Playboy USA").
+CACHE_DIR = Path(".cache")
+CACHE_FILE = CACHE_DIR / "magazine_issns.csv"
+CACHE_HEADERS = ["title", "print_issn", "electronic_issn", "issn", "issn_l", "source"]
+
+
+def _norm_title(title: str) -> str:
+    return (title or "").strip().casefold()
+
+
+def _ensure_cache_dir() -> None:
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+
+def load_magazine_issn_cache() -> dict[str, dict]:
+    """Load the CSV cache. Returns {norm_title: {print_issn, electronic_issn, ...}}.
+
+    Missing file returns {}. Bad rows are skipped.
+    """
+    if not CACHE_FILE.exists():
+        return {}
+    try:
+        with CACHE_FILE.open(newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            out: dict[str, dict] = {}
+            for row in reader:
+                title = (row.get("title") or "").strip()
+                if not title:
+                    continue
+                key = _norm_title(title)
+                # Prefer explicit print/electronic, fallback to generic issn/issn_l
+                p = clean_issn(row.get("print_issn") or row.get("issn"))
+                e = clean_issn(row.get("electronic_issn") or row.get("issn_l"))
+                # If issn == issn_l and only one distinct value, keep both as same
+                # (example: 1019-5009 / 1019-5009 for some magazines)
+                if not p and row.get("issn"):
+                    p = clean_issn(row.get("issn"))
+                if not e and row.get("issn_l"):
+                    e = clean_issn(row.get("issn_l"))
+                if not p and not e:
+                    continue
+                out[key] = {
+                    "title": title,
+                    "print_issn": p,
+                    "electronic_issn": e,
+                    "issn": p,
+                    "issn_l": e or p,
+                    "source": row.get("source") or "",
+                    "raw_row": row,
+                }
+            return out
+    except Exception:
+        return {}
+
+
+def lookup_magazine_issn_cache(canonical_title: str) -> dict | None:
+    """Exact-title (case-insensitive) lookup in the cache. Returns None if miss."""
+    canonical_title = (canonical_title or "").strip()
+    if not canonical_title:
+        return None
+    cache = load_magazine_issn_cache()
+    return cache.get(_norm_title(canonical_title))
+
+
+def save_magazine_issn_cache(
+    canonical_title: str,
+    print_issn: str | None,
+    electronic_issn: str | None,
+    source: str = "",
+) -> bool:
+    """Append or update the cache with a new ISSN mapping.
+
+    Normalizes ISSNs via ``clean_issn``. If an entry for this exact title
+    already exists, it is updated in place (preserving other rows). Returns
+    True if a write happened. Never raises.
+    """
+    canonical_title = (canonical_title or "").strip()
+    if not canonical_title:
+        return False
+    p = clean_issn(print_issn) if print_issn else None
+    e = clean_issn(electronic_issn) if electronic_issn else None
+    if not p and not e:
+        return False
+    # legacy columns: issn == print, issn_l == electronic (or print if electronic missing)
+    issn = p or e
+    issn_l = e or p
+    _ensure_cache_dir()
+    try:
+        # Read existing rows
+        rows: list[dict] = []
+        existing_keys: dict[str, int] = {}
+        if CACHE_FILE.exists():
+            with CACHE_FILE.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for idx, row in enumerate(reader):
+                    title = (row.get("title") or "").strip()
+                    if not title:
+                        continue
+                    rows.append(row)
+                    existing_keys[_norm_title(title)] = idx
+        key = _norm_title(canonical_title)
+        new_row = {
+            "title": canonical_title,
+            "print_issn": p or "",
+            "electronic_issn": e or "",
+            "issn": issn or "",
+            "issn_l": issn_l or "",
+            "source": source or "",
+        }
+        if key in existing_keys:
+            rows[existing_keys[key]] = {**rows[existing_keys[key]], **new_row}
+        else:
+            rows.append(new_row)
+        # Ensure dir and write atomically
+        with CACHE_FILE.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=CACHE_HEADERS)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({k: r.get(k, "") for k in CACHE_HEADERS})
+        return True
+    except Exception:
+        return False
 
 
 def _extract_issns(obj: dict) -> tuple[str | None, str | None]:
