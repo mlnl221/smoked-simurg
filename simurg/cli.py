@@ -1133,16 +1133,29 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             # [4a] Forced OpenAlex ISSN gap-fill — magazines only, post-scrape.
             # Always try to resolve print/electronic ISSN via OpenAlex /sources after the
             # normal magazine scrapers have run. Fills missing ISSNs only (never
-            # overwrites existing ones) so provenance stays intact.
+            # overwrites existing ones) so provenance stays intact. Shows the search
+            # params and, when no match, offers to paste an OpenAlex source URL.
             if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
                 try:
-                    from simurg.metadata.scrapers.openalex import fetch_openalex_issn
+                    from simurg.metadata.scrapers.openalex import OpenAlexScraper
 
                     canonical = (
                         metadata.get("canonical_title") or metadata.get("title") or ""
                     ).strip()
                     if canonical:
-                        patch = fetch_openalex_issn(canonical)
+                        with requests.Session() as _oa_sess:
+                            _oa_scraper = OpenAlexScraper(_oa_sess)
+                            _api_key = _oa_scraper._api_key()
+                            _masked = (
+                                "***" if _api_key else "(missing — set [metadata] openalex_api_key)"
+                            )
+                            # Show the exact query so the user can see why a title may miss (e.g. "Penthouse (USA)")
+                            click.secho(
+                                f"OpenAlex search: GET https://api.openalex.org/sources"
+                                f"  search={canonical!r}  per_page=10  api_key={_masked}",
+                                fg="cyan",
+                            )
+                            patch = _oa_scraper.search_magazine(canonical, None)
                         if patch:
                             filled = []
                             for k in ("print_issn", "electronic_issn"):
@@ -1158,11 +1171,88 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                             else:
                                 # Scraper already had ISSNs or OpenAlex had no new ones
                                 pass
+                            if patch.get("source_urls"):
+                                click.echo(f" OpenAlex source: {patch['source_urls'][0]}")
                         else:
                             click.secho(
                                 "OpenAlex: no ISSN match (consumer magazines may be hit-or-miss)",
                                 fg="yellow",
                             )
+                            if dry_run:
+                                click.secho(
+                                    "Dry-run: skipping manual OpenAlex URL prompt", fg="yellow"
+                                )
+                            else:
+                                click.echo(
+                                    "  [u] Paste an OpenAlex URL (e.g. https://openalex.org/S137355760"
+                                    " or https://api.openalex.org/sources/S137355760) to fetch ISSN manually"
+                                )
+                                click.echo("  [Enter] Keep without ISSN  |  [a] Abort all")
+                                try:
+                                    choice = click.prompt(
+                                        "OpenAlex URL", type=str, default="", show_default=False
+                                    ).strip()
+                                except click.Abort:
+                                    raise
+                                if choice.lower() in ("a", "abort"):
+                                    raise click.Abort
+                                pasted_url = ""
+                                if choice.lower() in ("u", "url"):
+                                    try:
+                                        pasted_url = click.prompt(
+                                            "Paste OpenAlex source URL", type=str
+                                        ).strip()
+                                    except click.Abort:
+                                        raise
+                                elif choice.startswith("http") or choice.startswith("S"):
+                                    pasted_url = choice
+                                elif choice:
+                                    # treat any non-empty non-http as possible ID/URL fragment
+                                    pasted_url = choice
+                                if pasted_url:
+                                    # Normalize bare S ID to full URL
+                                    if pasted_url.startswith("S") and not pasted_url.startswith(
+                                        "http"
+                                    ):
+                                        pasted_url = f"https://openalex.org/{pasted_url}"
+                                    try:
+                                        with requests.Session() as _oa_sess2:
+                                            _oa_scraper2 = OpenAlexScraper(_oa_sess2)
+                                            url_patch = _oa_scraper2.search_url(pasted_url)
+                                        if url_patch:
+                                            filled2 = []
+                                            for k in ("print_issn", "electronic_issn"):
+                                                if not metadata.get(k) and url_patch.get(k):
+                                                    metadata[k] = url_patch[k]
+                                                    filled2.append(f"{k}={url_patch[k]}")
+                                            for k in ("publisher", "country"):
+                                                if not metadata.get(k) and url_patch.get(k):
+                                                    metadata[k] = url_patch[k]
+                                            if filled2:
+                                                click.secho(
+                                                    f"OpenAlex manual URL fill: {', '.join(filled2)}",
+                                                    fg="green",
+                                                )
+                                            else:
+                                                click.secho(
+                                                    "OpenAlex URL resolved but had no new ISSNs to fill",
+                                                    fg="yellow",
+                                                )
+                                            if url_patch.get("source_urls"):
+                                                click.echo(
+                                                    f" OpenAlex source: {url_patch['source_urls'][0]}"
+                                                )
+                                        else:
+                                            click.secho(
+                                                f"Could not resolve OpenAlex URL to ISSN: {pasted_url}",
+                                                fg="yellow",
+                                            )
+                                    except click.Abort:
+                                        raise
+                                    except Exception as e:
+                                        click.secho(f"OpenAlex URL lookup failed: {e}", fg="yellow")
+                except click.Abort:
+                    raise
                 except Exception as e:
                     click.secho(f"OpenAlex ISSN lookup failed: {e}", fg="yellow")
         else:

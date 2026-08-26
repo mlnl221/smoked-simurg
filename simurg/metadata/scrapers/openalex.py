@@ -61,7 +61,7 @@ def _pick_issns(issn_list: list | None, issn_l: str | None) -> tuple[str | None,
 class OpenAlexScraper(BaseScraper):
     name = "openalex"
     categories = {"magazine"}
-    url_domains: set[str] = set()
+    url_domains: set[str] = {"openalex.org", "api.openalex.org"}
 
     def _api_key(self) -> str:
         try:
@@ -148,6 +148,73 @@ class OpenAlexScraper(BaseScraper):
                 if best.get("id")
                 else [],
                 "_openalex_raw": best,
+            }
+        except Exception:
+            return None
+
+    def search_url(self, url: str) -> dict | None:
+        """Resolve a pasted OpenAlex source URL to ISSN metadata.
+
+        Accepts:
+        - https://openalex.org/S137355760
+        - https://openalex.org/sources/S137355760
+        - https://api.openalex.org/sources/S137355760
+        - https://api.openalex.org/sources?filter=display_name.search:National%20Geographic (not supported - use ID URLs)
+        """
+        import re
+        from urllib.parse import urlparse
+
+        # Allow bare ID like "S137355760" (CLI normalizes, but also handle here)
+        if re.match(r"^\s*S\d+\s*$", url.strip()):
+            sid_match = re.search(r"S\d+", url)
+            if sid_match:
+                url = f"https://openalex.org/{sid_match.group(0)}"
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return None
+        netloc = (parsed.netloc or "").lower()
+        if "openalex.org" not in netloc:
+            return None
+        # Extract S\d+ ID
+        m = re.search(r"S\d+", url)
+        if not m:
+            return None
+        sid = m.group(0)
+        api_key = self._api_key()
+        if not api_key:
+            return None
+        try:
+            api_url = f"https://api.openalex.org/sources/{sid}"
+            r = self.session.get(api_url, params={"api_key": api_key}, timeout=10)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            src = data
+            if not src.get("display_name"):
+                return None
+            issn_list = src.get("issn") or []
+            issn_l = src.get("issn_l")
+            print_issn, electronic_issn = _pick_issns(issn_list, issn_l)
+            if not print_issn and not electronic_issn:
+                return None
+            publisher = src.get("host_organization_name") or src.get("host_organization") or None
+            if isinstance(publisher, dict):
+                publisher = publisher.get("display_name")
+            return {
+                "title": src.get("display_name") or sid,
+                "first_published": None,
+                "print_issn": print_issn,
+                "electronic_issn": electronic_issn,
+                "publisher": publisher,
+                "country": None,
+                "frequency": None,
+                "page_count": None,
+                "language": None,
+                "cover_url": None,
+                "description": None,
+                "source_urls": [f"https://openalex.org/{sid}"],
+                "_openalex_raw": src,
             }
         except Exception:
             return None

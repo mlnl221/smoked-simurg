@@ -33,6 +33,7 @@ def _stub_penguinrandomhouse(monkeypatch):
     monkeypatch.setattr(OpenAlexScraper, "search_magazine", lambda s, *a, **k: None)
     monkeypatch.setattr(OpenAlexScraper, "search_isbn", lambda s, *a, **k: None)
     monkeypatch.setattr(OpenAlexScraper, "search_title_author", lambda s, *a, **k: None)
+    monkeypatch.setattr(OpenAlexScraper, "search_url", lambda s, *a, **k: None)
 
 
 def test_search_all_scrapers_collects_every_hit(monkeypatch):
@@ -286,6 +287,7 @@ def test_supported_url_domains_lists_scrapers():
     assert "abebooks.com" in domains
     assert "archive.org" in domains
     assert "loc.gov" in domains
+    assert "openalex.org" in domains
     assert "example.com" not in domains
 
 
