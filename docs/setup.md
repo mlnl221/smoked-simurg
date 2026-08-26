@@ -5,7 +5,7 @@ Local-only setup. No global `pip install` — everything runs from a repo-local 
 ## Requirements
 
 - Python 3.11+ (tested on 3.13.2). `tomllib` is stdlib from 3.11; Python <3.11 needs `tomli`.
-- `ffmpeg` and `git` optional but reported by `make health`.
+- `git` optional but reported by `make health`.
 - Dependencies (see `requirements.txt:3-12`): `click`, `requests`, `ratelimit`, `beautifulsoup4`, `torf`, `pypdf`, `ebooklib`, `pillow`.
 
 ## Create venv and install deps

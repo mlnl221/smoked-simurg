@@ -1700,7 +1700,7 @@ def health():
 
     # external utils optional
     click.secho("\nOptional external:", fg="cyan")
-    for dep in ["ffmpeg", "git"]:
+    for dep in ["git"]:
         present = shutil.which(dep)
         if present:
             click.secho(f" {dep} ✓ ({present})", fg="green")
