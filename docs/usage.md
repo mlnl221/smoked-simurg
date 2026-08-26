@@ -71,7 +71,7 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
    - Priority: `--cover` → `cover_url_scraper` → embedded `cover_path` → DuckDuckGo fallback (`cover_fallback_duckduckgo`). Downloads, downscales to ~500×500, converts PNG→JPG via `Pillow`, rehosts via `ptscreens`/`imgbb`/`catbox` (`images/ptscreens.py`, `imgbb.py`, `catbox.py`). Never hotlinks source URLs.
 
 10. **Stage/rename** (`cli.py:1330+`, `images/base.py`).
-    - Unless `--no-rename`, sanitizes blacklisted chars (`constants.py:8`, `BLACKLISTED_CHARS`) and moves to `staging_dir` (falls back `download_directory` → `.staging`) as `{Title} - {Author} (year) [ISBN].ext`.
+    - Unless `--no-rename`, sanitizes blacklisted chars (`constants.py:8`, `BLACKLISTED_CHARS`) and moves to `staging_dir` (falls back `upload_directory` → `.staging`) as `{Title} - {Author} (year) [ISBN].ext`.
 
 11. **Torrent + upload** (`uploader/torrent.py`, `uploader/payload.py`, `uploader/upload.py`).
     - Single-file private torrent: `source:SIM`, `private:1`, piece length 32768 (`constants.py` / `payload.py` docstring, `torrent.py`). Payload uses verified Gazelle-legacy names (see `payload.py:4-24`): `book_title`, `original_year`, `title`, `year`, `record_label` (Publisher), `catalogue_number` (ISBN), `bitrate` (Source), `book_desc`/`album_desc`/`release_desc`, `artists[]`+`importance[]`, `publicationid` (not `groupid`), `type=2` (E-Books) or `7` (Magazines). Hidden `auth` + `torrent-new` posted. Dry-run writes real `.torrent` to `dottorrents_dir` (default `.torrents`, plus `tracker.simurg.dottorrents_dir` override) but skips POST. Between files, rate-limits 15 s with countdown and `Ctrl+C` to skip wait (`cli.py:39-62`, `842-844`).

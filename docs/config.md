@@ -15,15 +15,15 @@ Secrets rule: never commit `config.toml`, `*.torrent`, or a personal `https://tr
 
 | Key | Default | Meaning |
 |---|---|---|
-| `download_directory` | `.books` | Where downloaded/staged books live |
+| `upload_directory` | `.books` | Where uploaded/staged books live |
 | `dottorrents_dir` | `.torrents` | Where generated `.torrent` files are written |
-| `staging_dir` | `.staging` | Where renamed files are moved before torrenting. If empty, falls back to `download_directory`, then `.staging` (`README.md:58-60`) |
+| `staging_dir` | `.staging` | Where renamed files are moved before torrenting. If empty, falls back to `upload_directory`, then `.staging` (`README.md:58-60`) |
 
 `cli.py:827-839` resolves `dottorrents_dir` from `directory.dottorrents_dir`, overridden by `tracker.simurg.dottorrents_dir` when set.
 
 ```toml
 [directory]
-download_directory = ".books"
+upload_directory = ".books"
 dottorrents_dir = ".torrents"
 staging_dir = ".staging"
 ```
@@ -114,7 +114,7 @@ debug_tracker_connection = false
 
 ```toml
 [directory]
-download_directory = ".books"
+upload_directory = ".books"
 dottorrents_dir = ".torrents"
 staging_dir = ".staging"
 

@@ -1367,7 +1367,7 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
         # [9] Filename sanitize & staging move (before torrent creation)
         # New format: {Title} - {Author} (year) [ISBN].ext  -> staged before torrent
         if not no_rename:
-            # Determine staging directory: staging_dir > download_directory > .staging
+            # Determine staging directory: staging_dir > upload_directory > .staging
             staging_dir = None
             try:
                 from simurg.config import get_config
@@ -1375,7 +1375,11 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                 cfg_tmp = get_config()
                 staging_dir = str(cfg_tmp.directory.get("staging_dir", "") or "").strip()
                 if not staging_dir:
-                    staging_dir = str(cfg_tmp.directory.get("download_directory", "") or "").strip()
+                    staging_dir = str(
+                        cfg_tmp.directory.get("upload_directory", "")
+                        or cfg_tmp.directory.get("download_directory", "")
+                        or ""
+                    ).strip()
                 if not staging_dir:
                     staging_dir = ".staging"
             except Exception:

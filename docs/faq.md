@@ -63,7 +63,7 @@ MVP processes only the top level of `<directory>` (`cli.py:687-691`). Publisher 
 `--category magazines` parses the canonical title + issue identity from the filename (e.g. `National Geographic - June 2020.pdf`) via `metadata/magazine.py:decode_magazine_filename`, then fills via magazine-only scrapers (`enricher.py:192-217`). Requires issue `year` plus `issue_date` or `issue_number` (volume when present, `rules.txt:130`). Upload payload uses `magazine_*` fields (`payload.py:195-281`).
 
 **Where do torrents and staged files go?**
-`dottorrents_dir` (default `.torrents`, per-tracker override `tracker.simurg.dottorrents_dir`) for `.torrent` files (`cli.py:827-839`). `staging_dir` (default `.staging`, fallback `download_directory` → `.staging`) for renamed files (`config.example.toml:5`). Staged name: `{Title} - {Author} (year) [ISBN].ext`, `BLACKLISTED_CHARS` `[:?<>\\*|"/]` replaced with `_` (`constants.py:8`, `cli.py:35`).
+`dottorrents_dir` (default `.torrents`, per-tracker override `tracker.simurg.dottorrents_dir`) for `.torrent` files (`cli.py:827-839`). `staging_dir` (default `.staging`, fallback `upload_directory` → `.staging`) for renamed files (`config.example.toml:5`). Staged name: `{Title} - {Author} (year) [ISBN].ext`, `BLACKLISTED_CHARS` `[:?<>\\*|"/]` replaced with `_` (`constants.py:8`, `cli.py:35`).
 
 **What torrent settings are used?**
 Single-file, `private=1` (DHT/PEX/LPD disabled), `piece_length=32768`, `source:SIM` literal (`AGENTS.md`, `uploader/torrent.py`, `payload.py` docstring).

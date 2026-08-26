@@ -1,8 +1,8 @@
 # config.example.toml — copy to config.toml and fill; DO NOT COMMIT config.toml
 [directory]
-download_directory = ".books"
+upload_directory = ".books"
 dottorrents_dir = ".torrents"
-staging_dir = ".staging"  # renamed files are moved here before torrent creation; if empty, uses download_directory
+staging_dir = ".staging"  # renamed files are moved here before torrent creation; if empty, uses upload_directory
 
 [image]
 cover_uploader = "ptscreens"  # ptscreens|imgbb|catbox
