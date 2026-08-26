@@ -1255,6 +1255,159 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                     raise
                 except Exception as e:
                     click.secho(f"OpenAlex ISSN lookup failed: {e}", fg="yellow")
+                # [4a.1] Simurg fallback when OpenAlex yields nothing — search Simurg
+                # for an existing magazine (Playboy/Penthouse etc.) and offer its
+                # ISSNs for direct reuse (option A). Only when still missing ISSN
+                # after the forced OpenAlex pass.
+                if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
+                    try:
+                        from simurg.uploader.magazine_issn import (
+                            prompt_simurg_issn_reuse,
+                            search_simurg_magazine_issns,
+                        )
+
+                        # Need an authenticated tracker session
+                        _can_search = bool(
+                            gazelle_site and getattr(gazelle_site, "authkey", "dummy") != "dummy"
+                        )
+                        if not _can_search:
+                            if dry_run:
+                                click.secho(
+                                    "Dry-run: skipping Simurg ISSN search (no authenticated session)",
+                                    fg="yellow",
+                                )
+                            else:
+                                click.secho(
+                                    "Skipping Simurg ISSN search (no authenticated session)",
+                                    fg="yellow",
+                                )
+                        else:
+                            canonical = (
+                                metadata.get("canonical_title") or metadata.get("title") or ""
+                            ).strip()
+                            if canonical:
+                                click.secho(
+                                    f"OpenAlex returned nothing — searching Simurg for existing '{canonical}' magazines…",
+                                    fg="cyan",
+                                )
+                                candidates = search_simurg_magazine_issns(
+                                    gazelle_site, canonical, limit=10
+                                )
+                                if not candidates:
+                                    click.secho(
+                                        f"No existing Simurg magazine found matching '{canonical}' (no ISSN to reuse).",
+                                        fg="yellow",
+                                    )
+                                else:
+                                    click.secho(
+                                        f"Found {len(candidates)} existing magazine(s) on Simurg matching '{canonical}':",
+                                        fg="cyan",
+                                        bold=True,
+                                    )
+                                    for idx, cand in enumerate(candidates, 1):
+                                        issn_parts = []
+                                        if cand.get("print_issn"):
+                                            issn_parts.append(f"print {cand['print_issn']}")
+                                        if cand.get("electronic_issn"):
+                                            issn_parts.append(
+                                                f"electronic {cand['electronic_issn']}"
+                                            )
+                                        issn_str = (
+                                            " / ".join(issn_parts) if issn_parts else "no ISSN"
+                                        )
+                                        title = cand.get("title") or "?"
+                                        year = cand.get("year") or "?"
+                                        pub = cand.get("publisher") or ""
+                                        line = f"  [{idx}] {title} ({year}) — {issn_str}"
+                                        if pub:
+                                            line += f" · {pub}"
+                                        line += f"  {fmt_url(cand.get('url') or '')}"
+                                        click.echo(line)
+                                    if dry_run:
+                                        # Dry-run: auto-apply first candidate's ISSNs without extra prompts inside helper
+                                        click.secho(
+                                            "Dry-run: auto-using first Simurg candidate's ISSNs (no prompts)",
+                                            fg="yellow",
+                                        )
+                                        chosen = candidates[0]
+                                        overrides = prompt_simurg_issn_reuse(
+                                            metadata, chosen, dry_run=True
+                                        )
+                                        for k, v in overrides.items():
+                                            metadata[k] = v
+                                        if overrides:
+                                            click.secho(
+                                                f"Applied Simurg ISSN overrides (dry-run): {overrides}",
+                                                fg="green",
+                                            )
+                                    else:
+                                        # Interactive pick
+                                        click.echo(
+                                            "  [i] Keep without Simurg ISSN  |  [s] Skip this file  |  [a] Abort all"
+                                        )
+                                        while True:
+                                            ans = (
+                                                click.prompt(
+                                                    "Choose Simurg entry to reuse ISSN from",
+                                                    type=str,
+                                                    default="",
+                                                    show_default=False,
+                                                )
+                                                .strip()
+                                                .lower()
+                                            )
+                                            if ans in ("i", "inbuilt", "n", ""):
+                                                click.secho(
+                                                    "Keeping without Simurg ISSN.", fg="yellow"
+                                                )
+                                                break
+                                            if ans in ("s", "skip"):
+                                                click.secho(
+                                                    f"Skipping file {filepath.name} per user choice",
+                                                    fg="yellow",
+                                                )
+                                                skipped += 1
+                                                # Need to signal skip of this file to outer loop
+                                                # Use a sentinel via metadata flag; handle after this block
+                                                metadata["_simurg_skip_file"] = True  # type: ignore
+                                                break
+                                            if ans in ("a", "abort"):
+                                                raise click.Abort
+                                            if ans.isdigit():
+                                                n = int(ans)
+                                                if 1 <= n <= len(candidates):
+                                                    chosen = candidates[n - 1]
+                                                    overrides = prompt_simurg_issn_reuse(
+                                                        metadata, chosen, dry_run=False
+                                                    )
+                                                    for k, v in overrides.items():
+                                                        metadata[k] = v
+                                                    if overrides:
+                                                        click.secho(
+                                                            f"Applied Simurg ISSN overrides: {overrides}",
+                                                            fg="green",
+                                                        )
+                                                    else:
+                                                        click.secho(
+                                                            "No ISSN overrides applied.",
+                                                            fg="yellow",
+                                                        )
+                                                    break
+                                            click.secho(
+                                                f"Invalid choice — pick 1-{len(candidates)}, i, s or a.",
+                                                fg="yellow",
+                                            )
+                                        if metadata.get("_simurg_skip_file"):
+                                            # inner loop already broke; keep flag for outer continue
+                                            pass
+                    except click.Abort:
+                        raise
+                    except Exception as e:
+                        click.secho(f"Simurg ISSN fallback failed: {e}", fg="yellow")
+                # If Simurg picker requested file skip, jump to next file.
+                if metadata.get("_simurg_skip_file"):
+                    metadata.pop("_simurg_skip_file", None)
+                    continue
         else:
             from simurg.metadata.combine import build_metadata, validate_metadata
 

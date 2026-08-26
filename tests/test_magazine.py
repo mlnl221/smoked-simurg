@@ -260,7 +260,9 @@ def test_compile_new_magazine_payload():
     assert data["magazine_country"] == "United States"
     assert data["magazine_frequency"] == "Monthly"
     assert data["magazine_release_type"] == "Individual Issue"
-    assert data["magazine_issue_date"] == "2020-06"
+    # Tracker validates strictly YYYY-MM-DD even when precision is "month"
+    # (see .failed/Penthouse*.json:30 — "2002-02" rejected). Payload pads to -01.
+    assert data["magazine_issue_date"] == "2020-06-01"
     assert data["magazine_issue_date_precision"] == "month"
     assert data["title"] == "National Geographic - June 2020"
     assert data["bitrate"] == "Retail"
@@ -319,7 +321,7 @@ def test_compile_existing_magazine_payload():
     assert data["publicationid"] == "12862"
     assert "groupid" not in data
     assert data["magazine_release_type"] == "Individual Issue"
-    assert data["magazine_issue_date"] == "2020-06"
+    assert data["magazine_issue_date"] == "2020-06-01"
 
 
 # --- enricher routing ---
