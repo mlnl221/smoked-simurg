@@ -177,6 +177,35 @@ class WonderClubScraper(BaseScraper):
         if not q.strip():
             return None
         cands = self._search_general(q.strip())
+        # If general search yields nothing for a dated issue, try direct magazine slug
+        # e.g. /magazines/penthouse-february-2002 (WonderClub's canonical magazine URL)
+        if not cands and issue and issue.get("issue_date"):
+            try:
+                # Build slug like "penthouse-february-2002" from title + month + year
+                slug_title = re.sub(r"[^a-z0-9]+", "-", (title or "").lower()).strip("-")
+                raw_date = issue.get("issue_date") or ""
+                # Support both YYYY-MM with or without precision
+                m_match = re.match(r"(\d{4})-(\d{2})", str(raw_date))
+                if m_match and slug_title:
+                    y, m = m_match.group(1), m_match.group(2)
+                    from simurg.metadata.scrapers.util import MONTHS as _MONTHS
+
+                    month_name = _MONTHS.get(int(m), "").lower()
+                    if month_name:
+                        direct_slug = f"{slug_title}-{month_name}-{y}"
+                        direct_url = f"{_WONDER_BASE}/magazines/{direct_slug}"
+                        direct_res = self._fetch_and_parse(direct_url)
+                        if direct_res and direct_res.get("title"):
+                            return direct_res
+                    # Also try alternative slug without month hyphen? fallback to title-year
+                    # e.g. some magazines use penthouse-2002-02
+                    alt_slug = f"{slug_title}-{y}-{m}"
+                    alt_url = f"{_WONDER_BASE}/magazines/{alt_slug}"
+                    alt_res = self._fetch_and_parse(alt_url)
+                    if alt_res and alt_res.get("title"):
+                        return alt_res
+            except Exception:
+                pass
         if not cands:
             cands = self._search_title(title)
         if not cands:
@@ -197,6 +226,7 @@ class WonderClubScraper(BaseScraper):
         Accepts:
         - /books/<slug>
         - /magazines/<slug>  (e.g. /magazines/penthouse-february-2002)
+        - /<slug>-<isbn>  (e.g. /penthouse-9780446610339)
         - /<isbn> / numeric slugs
         www. prefix is allowed via BaseScraper.match_url semantics.
         """
@@ -210,11 +240,11 @@ class WonderClubScraper(BaseScraper):
         # Explicitly reject search / api endpoints (not product pages)
         if path.startswith("/search_results.php") or path.startswith("/books/bookbytitleexp.php"):
             return None
-        # Accept /books/<slug> and /magazines/<slug> and /<isbn> style
+        # Accept /books/<slug>, /magazines/<slug>, slug-ISBN, and numeric slugs
         if (
             not re.search(r"/books/[^/]+", path)
             and not re.search(r"/magazines/[^/]+", path)
-            and not re.search(r"/\d{6,}", path)
+            and not re.search(r"\d{7,}", path)
         ):
             return None
         return self._fetch_and_parse(url)
@@ -229,7 +259,8 @@ def _parse_search_results(html: str, base: str) -> list[dict]:
     """Parse WonderClub search HTML into candidate dicts.
 
     Must be resilient — inspect actual structure, not guess.  Look for
-    anchors whose href matches /books/<slug> or numeric/ISBN patterns.
+    anchors whose href matches /books/<slug>, /magazines/<slug>, or
+    slug-ISBN product pages (e.g. /penthouse-9780446610339).
     """
     if not html:
         return []
@@ -241,11 +272,16 @@ def _parse_search_results(html: str, base: str) -> list[dict]:
         href = a["href"]
         if not href:
             continue
-        # Must look like a record URL (books or magazines)
-        if "/books/" not in href and "/magazines/" not in href and not re.search(r"/\d{6,}", href):
+        # Must look like a record URL (books, magazines, or ISBN-bearing product)
+        if "/books/" not in href and "/magazines/" not in href and not re.search(r"\d{7,}", href):
             continue
-        # Skip navigation / tab anchors
+        # Skip navigation / tab / search anchors
         if href.startswith("#"):
+            continue
+        if "search_results.php" in href or "bookbytitleexp.php" in href:
+            continue
+        # Skip bare section indexes like /magazines/ (no product slug)
+        if href.rstrip("/").endswith("/magazines") or href.rstrip("/").endswith("/books"):
             continue
         abs_url = urljoin(base, href)
         if abs_url in seen:
@@ -384,14 +420,41 @@ def _parse_page(html: str, url: str) -> dict | None:
         elif isinstance(ja, str):
             authors.append(_clean_text(ja))
     # Details Manufacturer sometimes is author/publisher conflated — not author
-    # Look for explicit author element
+    # Look for explicit author element, but skip review authors
     for sel in (".author", ".book-author", "[itemprop='author']", "a[href*='/author/']"):
-        el = soup.select_one(sel)
-        if el and _clean_text(el.get_text()):
-            val = _clean_text(el.get_text())
-            if val and val not in authors:
-                authors.append(val)
+        # Find ALL matches and skip those inside a review container
+        for el in soup.select(sel):
+            # Skip if this author is inside a review / aggregateRating block
+            if el.find_parent(attrs={"itemprop": "review"}) or el.find_parent(
+                attrs={"itemprop": "aggregateRating"}
+            ):
+                continue
+            # Also skip if parent chain contains a review type
+            parent = el.find_parent()
+            is_review = False
+            for anc in el.parents:
+                try:
+                    if anc.get("itemprop") == "review":
+                        is_review = True
+                        break
+                except Exception:
+                    continue
+            if is_review:
+                continue
+            if _clean_text(el.get_text()):
+                val = _clean_text(el.get_text())
+                if val and val not in authors:
+                    authors.append(val)
+                break
+        if authors:
             break
+    # For magazines, there is no book author — clear review-derived authors
+    # (e.g. Penthouse February 2002 review author Randall Kushell)
+    if details.get("Category") and "Magazines" in str(details.get("Category")):
+        # Magazine pages should not expose a book author from reviews
+        if authors and not details.get("Author"):
+            # Only keep authors if page explicitly lists an Author field
+            authors = []
     # Fallback: details Author field (rare)
     if not authors and details.get("Author"):
         authors = [_clean_text(details["Author"])]
@@ -473,6 +536,14 @@ def _parse_page(html: str, url: str) -> dict | None:
     if isinstance(publisher, dict):
         publisher = publisher.get("name") or ""
     publisher = _clean_text(publisher) if publisher else ""
+    # WonderClub duplicates brand name via hidden + visible spans
+    # e.g. "Penthouse Penthouse" or "Abrams Books Abrams Books" -> dedupe
+    if publisher:
+        parts = publisher.split()
+        if len(parts) % 2 == 0 and len(parts) >= 2:
+            half = len(parts) // 2
+            if parts[:half] == parts[half:]:
+                publisher = " ".join(parts[:half])
 
     # Year / Publication Date (magazines use "Publication Date: February 2002")
     year = None
@@ -598,13 +669,19 @@ def _parse_page(html: str, url: str) -> dict | None:
             result["issue_date"] = norm
             result["issue_date_precision"] = prec
 
-    # Tags: Category -> clean_tags later via combine; also set raw for display
+    # Tags: Category -> comma-separated on same line
+    # Raw Category is "Media >> Magazines >> XXX Magazines >> Perfect Women"
+    # Must be split on ">>" and re-joined with "," only (user request).
     if raw_category:
-        # Preserve raw; also produce subjects for tag pipeline
-        result["subjects"] = [raw_category]
-        result["tags"] = raw_category  # will be cleaned in combine via clean_tags
+        parts = [p.strip() for p in raw_category.split(">>") if p.strip()]
+        # Fallback: if no ">>" found but raw contains ">" or "," keep as single
+        if not parts:
+            parts = [raw_category.strip()]
+        result["subjects"] = parts
+        result["tags"] = ",".join(parts)
     else:
         result["tags"] = ""
+        result["subjects"] = []
 
     if not result["title"] or result["title"] == "Unknown":
         return None

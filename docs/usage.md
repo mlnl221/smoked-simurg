@@ -30,7 +30,7 @@ From `simurg/cli.py:648-672` (`up --help`):
 | Flag | Meaning |
 |---|---|
 | `--dry-run` | Full flow (staging, cover rehost, `.torrent` generation, prompts) but skips the final upload POST |
-| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `IssnPortal` / `InternetArchive` / `LibraryOfCongress` / `Crossref` (and `MAGAZINE_EXTENSIONS`) |
+| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `OpenAlex` (ISSN) / `InternetArchive` / `LibraryOfCongress` / `Crossref` (and `MAGAZINE_EXTENSIONS`) |
 | `--source {Retail,Scan,OCR,Convert,Other}` | Source label. Never guessed — defaults to `Other` when unset (`cli.py:1138-1140`) |
 | `--group-id ID` | Force upload to existing Publication `publicationid` |
 | `--cover URL` | Override cover URL (skips scraper/file cover) |
@@ -49,7 +49,7 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 
 3. **Query scrapers — fresh, no cache** (`enricher.py:11-161`).
    - Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub` (`enricher.py:56-67`).
-   - Magazines: `IssnPortal`, `InternetArchive`, `LibraryOfCongress`, `Crossref`.
+   - Magazines: `OpenAlex` (ISSN via `/sources`), `InternetArchive`, `LibraryOfCongress`, `Crossref`.
    - Strategy: ISBN search first when ISBN present; if no confident hit (`_fuzzy_title >=0.8` or `_fuzzy_author >=0.8`) also search `title+author` and show all hits. 10-result-style prompt when multiple hits.
 
 4. **Interactive picker** (`cli.py:408-460`, `1002-1048`).
@@ -58,7 +58,8 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 5. **Cross-source ISBN enrichment** (`cli.py:1060-1126`, `enricher.py:255-321`).
    - Re-queries every scraper by ISBN and offers to fill gaps (publisher, year, page_count, description, cover_url, tags). Primary title/authors/year stay locked. Only prompts when gaps exist.
 
-6. **Combine and field review** (`cli.py:1128-1140`, `metadata/combine.py`).
+6. **Combine and forced ISSN fill + field review** (`cli.py:1128-1160`, `metadata/combine.py`, `scrapers/openalex.py`).
+   - Magazines: after `build_magazine_metadata`, if `print_issn`/`electronic_issn` missing, forced `fetch_openalex_issn` via `OpenAlex /sources` fills the gap (never overwrites existing ISSNs).
    - Ebooks: `build_metadata` merges inbuilt + scraper choice. Source defaults to `--source` or `Other` (never claims `Retail`). Magazines: `build_magazine_metadata` parses canonical title + issue identity from filename (e.g. `National Geographic - June 2020.pdf` via `metadata/magazine.py:decode_magazine_filename`). When required fields are missing and a scraper was used, offers per-field review for fields that differ between file and scraper — title, authors, year, publisher, ISBN, description, edition, illustrators (and editors/translators when present): `[i]` file value, `[s]` scraper value, `[b]` append both (for list/text fields), or `[k]` keep merged default (`cli.py:494-611`). Dry-run keeps defaults without prompting (`cli.py:1153-1171`).
 
 7. **Editor review** (`cli.py:1202-1214`, `metadata/review.py`).

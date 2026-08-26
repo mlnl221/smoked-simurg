@@ -31,7 +31,7 @@ simurg/
       librarything.py
       wonderclub.py
       duckduckgo.py        # image fallback
-      issnportal.py        # magazine-only
+      openalex.py          # magazine-only (ISSN via /sources)
       internetarchive.py   # magazine-only
       libraryofcongress.py # magazine-only
       crossref.py          # magazine-only

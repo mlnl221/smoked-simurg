@@ -54,12 +54,14 @@ catbox_userhash = ""
 | `googlebooks_key` | `""` | Optional Google Books API key (quota) for `GoogleBooksScraper` |
 | `cover_fallback_duckduckgo` | `true` | Allow DuckDuckGo image search when scraper/file cover missing (`scrapers/duckduckgo.py`) |
 | `librarything_token` | `""` | LibraryThing Talpa API token (also used as REST `apikey`) for `LibraryThingScraper` |
+| `openalex_api_key` | `""` | OpenAlex `/sources` API key (free, https://openalex.org/settings/api) — required for ISSN lookup via `OpenAlexScraper` |
 
 ```toml
 [metadata]
 googlebooks_key = ""
 cover_fallback_duckduckgo = true
 librarything_token = ""
+openalex_api_key = ""
 ```
 
 ### `[tracker.simurg]`
@@ -125,6 +127,7 @@ ptscreens_key = "YOUR_PTSCREENS_KEY"
 [metadata]
 googlebooks_key = ""
 cover_fallback_duckduckgo = true
+openalex_api_key = "YOUR_OPENALEX_KEY"
 
 [tracker.simurg]
 session = "session_cookie_from_browser_devtools"

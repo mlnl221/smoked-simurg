@@ -1130,6 +1130,41 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             from simurg.metadata.magazine import build_magazine_metadata, validate_magazine_metadata
 
             metadata = build_magazine_metadata(inbuilt, scraper_data, fmt, str(filepath))
+            # [4a] Forced OpenAlex ISSN gap-fill — magazines only, post-scrape.
+            # Always try to resolve print/electronic ISSN via OpenAlex /sources after the
+            # normal magazine scrapers have run. Fills missing ISSNs only (never
+            # overwrites existing ones) so provenance stays intact.
+            if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
+                try:
+                    from simurg.metadata.scrapers.openalex import fetch_openalex_issn
+
+                    canonical = (
+                        metadata.get("canonical_title") or metadata.get("title") or ""
+                    ).strip()
+                    if canonical:
+                        patch = fetch_openalex_issn(canonical)
+                        if patch:
+                            filled = []
+                            for k in ("print_issn", "electronic_issn"):
+                                if not metadata.get(k) and patch.get(k):
+                                    metadata[k] = patch[k]
+                                    filled.append(f"{k}={patch[k]}")
+                            # Also fill publisher/country if still empty and OpenAlex has them
+                            for k in ("publisher", "country"):
+                                if not metadata.get(k) and patch.get(k):
+                                    metadata[k] = patch[k]
+                            if filled:
+                                click.secho(f"OpenAlex ISSN fill: {', '.join(filled)}", fg="green")
+                            else:
+                                # Scraper already had ISSNs or OpenAlex had no new ones
+                                pass
+                        else:
+                            click.secho(
+                                "OpenAlex: no ISSN match (consumer magazines may be hit-or-miss)",
+                                fg="yellow",
+                            )
+                except Exception as e:
+                    click.secho(f"OpenAlex ISSN lookup failed: {e}", fg="yellow")
         else:
             from simurg.metadata.combine import build_metadata, validate_metadata
 
@@ -1647,8 +1682,34 @@ def checkconf():
         except Exception as e:
             click.secho(f"Scraper {name}: FAILED - {e}", fg="yellow")
 
+    # OpenAlex probe (magazine-only ISSN via /sources)
+    try:
+        from simurg.config import get_config as _cfg2
+
+        _oa_key = str(_cfg2().metadata.get("openalex_api_key", "") or "").strip()
+        if not _oa_key:
+            click.secho("Scraper openalex: SKIPPED (no openalex_api_key in config)", fg="yellow")
+        else:
+            from simurg.metadata.scrapers.openalex import OpenAlexScraper
+
+            sc = OpenAlexScraper()
+            r = sc.search_magazine("National Geographic")
+            if r and (r.get("print_issn") or r.get("electronic_issn")):
+                click.secho(
+                    f"Scraper openalex: OK (found ISSN {r.get('print_issn') or r.get('electronic_issn')} for {r.get('title')})",
+                    fg="green",
+                )
+            elif r:
+                click.secho(
+                    f"Scraper openalex: OK (found {r.get('title')} but no ISSN)", fg="yellow"
+                )
+            else:
+                click.secho("Scraper openalex: OK (no result but reachable)", fg="green")
+    except Exception as e:
+        click.secho(f"Scraper openalex: FAILED - {e}", fg="yellow")
+
     # Declared elsewhere in the pipeline but not probed by checkconf
-    for name in ("issnportal", "librarything", "internetarchive", "libraryofcongress", "crossref"):
+    for name in ("librarything", "internetarchive", "libraryofcongress", "crossref"):
         click.secho(f"Scraper {name}: SKIPPED (not exercised by checkconf)", fg="yellow")
 
     click.secho("=== checkconf done ===", fg="cyan")

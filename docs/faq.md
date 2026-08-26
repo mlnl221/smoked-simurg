@@ -71,7 +71,7 @@ Single-file, `private=1` (DHT/PEX/LPD disabled), `piece_length=32768`, `source:S
 ## Metadata and scrapers
 
 **Which scrapers are queried?**
-Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub`. Magazine-only: `IssnPortal`, `InternetArchive`, `LibraryOfCongress`, `Crossref` (`enricher.py:56-69`). `DuckDuckGo` is cover-image fallback only when `cover_fallback_duckduckgo=true`.
+Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub`. Magazine-only: `OpenAlex` (ISSN via `/sources`), `InternetArchive`, `LibraryOfCongress`, `Crossref` (`enricher.py:55-68`). `DuckDuckGo` is cover-image fallback only when `cover_fallback_duckduckgo=true`. OpenAlex is also forced post-scrape to fill missing `print_issn`/`electronic_issn` for magazines (`cli.py:1133`, `scrapers/openalex.py`).
 
 **Is scraper data cached?**
 No. Always queried fresh; no persistent cache (`enricher.py:1`, manual smoke test requirement in `AGENTS.md`).
