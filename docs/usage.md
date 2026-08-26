@@ -29,12 +29,12 @@ From `simurg/cli.py:648-672` (`up --help`):
 
 | Flag | Meaning |
 |---|---|
-| `--dry-run` | Full flow (staging, cover rehost, `.torrent` generation, prompts) but skips the final upload POST |
-| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `OpenAlex` (ISSN) / `InternetArchive` / `LibraryOfCongress` / `Crossref` (and `MAGAZINE_EXTENSIONS`) |
+| `--dry-run` | Full flow (staging, cover rehost, `.torrent` generation, prompts, `.cache` reuse) but skips the final upload POST |
+| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `.cache` exact-title reuse → `OpenAlex` (ISSN/ISSN-L) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `OpenLibrary` / `LibraryThing` / `WonderClub` (and `MAGAZINE_EXTENSIONS` `PDF/CBR/CBZ/DJVU`) |
 | `--source {Retail,Scan,OCR,Convert,Other}` | Source label. Never guessed — defaults to `Other` when unset (`cli.py:1138-1140`) |
 | `--group-id ID` | Force upload to existing Publication `publicationid` |
 | `--cover URL` | Override cover URL (skips scraper/file cover) |
-| `--url URL` | Paste a book-page URL (openlibrary/googlebooks/bookbrainz/abebooks/archive.org/loc) — routed to matching scraper, skipping auto search (`enricher.py:85-108`) |
+| `--url URL` | Paste a book-page URL (openlibrary/googlebooks/bookbrainz/abebooks/archive.org/loc/openalex/wonderclub) — routed to matching scraper, skipping auto search (`enricher.py:85-108`, `magazine_issn.py`) |
 | `--no-rename` | Skip filename sanitize/staging |
 | `--no-review` | Skip interactive editor metadata review (`cli.py:1206`) |
 
@@ -47,10 +47,10 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 2. **Decode inbuilt metadata** (`cli.py:850-859`, `_decode_inbuilt_quick`).
    - EPUB via OPF (`metadata/epub.py`), PDF via `pypdf` info, MOBI/AZW3/DJVU via `metadata/mobi.py`. Includes description, edition, illustrators/editors/translators when present. Encrypted PDFs abort (`cli.py:860-868`, `rules.txt:36`). ISBN dashes stripped and validated to 10/13 chars (`cli.py:876-879`).
 
-3. **Query scrapers — fresh, no cache** (`enricher.py:11-161`).
+3. **Query scrapers — fresh, no generic cache** (`enricher.py:11-161`, `uploader/magazine_issn.py`).
    - Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub` (`enricher.py:56-67`).
-   - Magazines: `OpenAlex` (ISSN via `/sources`), `InternetArchive`, `LibraryOfCongress`, `Crossref`.
-   - Strategy: ISBN search first when ISBN present; if no confident hit (`_fuzzy_title >=0.8` or `_fuzzy_author >=0.8`) also search `title+author` and show all hits. 10-result-style prompt when multiple hits.
+   - Magazines: `.cache/magazine_issns.csv` exact-title reuse (if seen before) → `OpenAlex` (ISSN/ISSN-L via `/sources`, needs `openalex_api_key`) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `OpenLibrary` / `LibraryThing` / `WonderClub` (WonderClub also handles `/magazines/*` URLs). All except `.cache` are always fresh.
+   - Strategy: ISBN search first when ISBN present; if no confident hit (`_fuzzy_title >=0.8` or `_fuzzy_author >=0.8`) also search `title+author` and show all hits. 10-result-style prompt when multiple hits. For magazines `WonderClub`/`LibraryThing` correctly parse volume/issue fallback.
 
 4. **Interactive picker** (`cli.py:408-460`, `1002-1048`).
    - Multiple hits → `[n]` pick, `[i]` inbuilt-only, `[s]` skip file, `[a]` abort all, `[u]` paste URL. Single hit auto-used. No results → retry up to 3 times: `[t]` new title+author, `[c]` freeform query (`search_custom`), `[u]` URL, `[i]`/`[s]`/`[a]` (`cli.py:298-405`).
@@ -58,24 +58,24 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 5. **Cross-source ISBN enrichment** (`cli.py:1060-1126`, `enricher.py:255-321`).
    - Re-queries every scraper by ISBN and offers to fill gaps (publisher, year, page_count, description, cover_url, tags). Primary title/authors/year stay locked. Only prompts when gaps exist.
 
-6. **Combine and forced ISSN fill + field review** (`cli.py:1128-1160`, `metadata/combine.py`, `scrapers/openalex.py`).
-   - Magazines: after `build_magazine_metadata`, if `print_issn`/`electronic_issn` missing, forced `fetch_openalex_issn` via `OpenAlex /sources` fills the gap (never overwrites existing ISSNs).
-   - Ebooks: `build_metadata` merges inbuilt + scraper choice. Source defaults to `--source` or `Other` (never claims `Retail`). Magazines: `build_magazine_metadata` parses canonical title + issue identity from filename (e.g. `National Geographic - June 2020.pdf` via `metadata/magazine.py:decode_magazine_filename`). When required fields are missing and a scraper was used, offers per-field review for fields that differ between file and scraper — title, authors, year, publisher, ISBN, description, edition, illustrators (and editors/translators when present): `[i]` file value, `[s]` scraper value, `[b]` append both (for list/text fields), or `[k]` keep merged default (`cli.py:494-611`). Dry-run keeps defaults without prompting (`cli.py:1153-1171`).
+6. **Combine and cached + forced ISSN fill + Simurg fallback + field review** (`cli.py:1130-1500`, `metadata/combine.py`, `uploader/magazine_issn.py`, `scrapers/openalex.py`).
+   - Magazines: after `build_magazine_metadata`, warm-save any existing ISSN to `.cache/magazine_issns.csv` so next same-title issue can reuse. Then exact-title cache lookup (casefold) fills missing ISSNs without network. If still missing, forced `OpenAlex /sources` (`search_magazine`, shows `GET ... search='Title' per_page=10 api_key=***`) fills the gap (never overwrites); on `no ISSN match` offers manual `https://openalex.org/S...` paste via `search_url`. If still missing after OpenAlex, searches Simurg itself (`browse` + `torrentgroup` via `magazine_issn.py:search_simurg_magazine_issns`) for existing same-title magazines, shows `print`/`electronic` ISSNs with URLs, and prompts `Use print_issn X for print? [Y/n]` / `Use electronic_issn Y for electronic? [Y/n]` or `Use it for BOTH? [y/N]` when one distinct ISSN (e.g. `1019-5009` for both). Dry-run auto-uses first Simurg candidate. ISSNs from any successful source are persisted to `.cache` for next issue.
+   - Ebooks: `build_metadata` merges inbuilt + scraper choice. Source defaults to `--source` or `Other` (never claims `Retail`). Magazines: `build_magazine_metadata` parses canonical title + issue identity from filename (e.g. `National Geographic - June 2020.pdf` or `Penthouse 2002-02` without dash via `metadata/magazine.py:decode_magazine_filename`). When required fields are missing and a scraper was used, offers per-field review for fields that differ between file and scraper — title, authors, year, publisher, ISBN, description, edition, illustrators (and editors/translators when present): `[i]` file value, `[s]` scraper value, `[b]` append both (for list/text fields), or `[k]` keep merged default (`cli.py:494-611`). Dry-run keeps defaults without prompting.
 
-7. **Editor review** (`cli.py:1202-1214`, `metadata/review.py`).
-   - Opens `$EDITOR`/`default_editor`/`nano` for freeform revision. Skip with `--no-review`. Salmon-style `review_metadata` flow.
+7. **Editor review** (`cli.py:1550+`, `metadata/review.py`).
+   - Opens `$EDITOR`/`default_editor`/`nano` for freeform revision. Shows every editable field (including `publisher`, `country`, `frequency`, `page_count` for magazines now; `page_count` editable via `pg`). Skip with `--no-review`. Salmon-style `review_metadata` flow but `album_desc` displayed as `description`.
 
-8. **Dupe search** (`cli.py:1219-1252`, `uploader/dupe.py`).
-   - Builds search strings from title/authors/ISBN (`generate_dupe_search_strs`), calls `check_existing_group` (Simurg `browse`/`publication` API). Prompt: upload to existing Publication or create new. `--group-id` bypasses search (validated via `GET /upload.php?publicationid=<id>`). Optionally checks open requests (`uploader/requests.py`). Dry-run still prompts; tracker-less dry-run skips it.
+8. **Dupe search** (`cli.py:1600+`, `uploader/dupe.py`).
+   - Builds search strings from title/authors/ISBN (`generate_dupe_search_strs`), calls `check_existing_group` (Simurg `browse`/`publication` API, fuzzy 0.85 auto-select). Prompt: upload to existing Publication or create new. `--group-id` bypasses search (validated via `GET /upload.php?publicationid=<id>`). Optionally checks open requests (`uploader/requests.py`). Dry-run still prompts; tracker-less dry-run skips it.
 
-9. **Cover handling** (`cli.py:1287-1330`, `images/`).
+9. **Cover handling** (`cli.py:1650+`, `images/`).
    - Priority: `--cover` → `cover_url_scraper` → embedded `cover_path` → DuckDuckGo fallback (`cover_fallback_duckduckgo`). Downloads, downscales to ~500×500, converts PNG→JPG via `Pillow`, rehosts via `ptscreens`/`imgbb`/`catbox` (`images/ptscreens.py`, `imgbb.py`, `catbox.py`). Never hotlinks source URLs.
 
-10. **Stage/rename** (`cli.py:1330+`, `images/base.py`).
-    - Unless `--no-rename`, sanitizes blacklisted chars (`constants.py:8`, `BLACKLISTED_CHARS`) and moves to `staging_dir` (falls back `upload_directory` → `.staging`) as `{Title} - {Author} (year) [ISBN].ext`.
+10. **Stage/rename** (`cli.py:1750+`, `images/base.py`).
+    - Unless `--no-rename`, sanitizes blacklisted chars (`constants.py:8`, `BLACKLISTED_CHARS`) and moves to `staging_dir` (falls back `upload_directory` → `.staging`) as `{Title} - {Author} (year) [ISBN].ext` (magazines: `{Title} - {Issue label} (year).ext` via `magazine_issue_label`).
 
 11. **Torrent + upload** (`uploader/torrent.py`, `uploader/payload.py`, `uploader/upload.py`).
-    - Single-file private torrent: `source:SIM`, `private:1`, piece length 32768 (`constants.py` / `payload.py` docstring, `torrent.py`). Payload uses verified Gazelle-legacy names (see `payload.py:4-24`): `book_title`, `original_year`, `title`, `year`, `record_label` (Publisher), `catalogue_number` (ISBN), `bitrate` (Source), `book_desc`/`album_desc`/`release_desc`, `artists[]`+`importance[]`, `publicationid` (not `groupid`), `type=2` (E-Books) or `7` (Magazines). Hidden `auth` + `torrent-new` posted. Dry-run writes real `.torrent` to `dottorrents_dir` (default `.torrents`, plus `tracker.simurg.dottorrents_dir` override) but skips POST. Between files, rate-limits 15 s with countdown and `Ctrl+C` to skip wait (`cli.py:39-62`, `842-844`).
+    - Single-file private torrent: `source:SIM`, `private:1`, piece length 32768 (`constants.py` / `payload.py` docstring, `torrent.py`). Payload uses verified Gazelle-legacy names (see `payload.py:4-24`): `book_title`, `original_year`, `title`, `year`, `record_label`/`magazine_publisher`, `catalogue_number`/`magazine_print_issn`+`magazine_electronic_issn`, `bitrate` (Source), `book_desc`/`album_desc`/`release_desc`, `artists[]`+`importance[]`, `publicationid` (not `groupid`), `type=2` (E-Books) or `7` (Magazines). Magazines pad `magazine_issue_date` to `YYYY-MM-DD` (`_magazine_issue_date_for_payload`). Hidden `auth` + `torrent-new` posted. Dry-run writes real `.torrent` to `dottorrents_dir` (default `.torrents`, plus `tracker.simurg.dottorrents_dir` override) but skips POST. Between files, rate-limits 15 s with countdown and `Ctrl+C` to skip wait (`cli.py:39-62`, `842-844`).
 
 ## Batch and categories
 
@@ -85,6 +85,6 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 
 ## Tips
 
-- Always `make checkconf` after editing `config.toml`.
-- Use `ARGS="--dry-run"` to rehearse prompts, cover rehost, and inspect `config.directory.dottorrents_dir/.torrent` before real uploads.
-- Keep `config.toml`, `.torrents/`, `.books/`, `.staging/`, `*.torrent` out of git (gitignored).
+- Always `make checkconf` after editing `config.toml` (also probes `OpenAlex` ISSN and `WonderClub`/`LibraryThing` reachability).
+- Use `ARGS="--dry-run"` to rehearse prompts, cover rehost, and inspect `config.directory.dottorrents_dir/.torrent` before real uploads (dry-run still uses `.cache` and auto-applies first Simurg candidate).
+- Keep `config.toml`, `.torrents/`, `.books/`, `.staging/`, `.cache/`, `*.torrent` out of git (all gitignored). `.cache/magazine_issns.csv` is safe to delete — it will be rebuilt.

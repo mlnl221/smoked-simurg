@@ -9,6 +9,10 @@ cp config.example.toml config.toml
 
 Secrets rule: never commit `config.toml`, `*.torrent`, or a personal `https://tracker.simurg.world/<passkey>/announce` (`AGENTS.md`, `README.md:44-52`).
 
+## Cache
+
+`.cache/magazine_issns.csv` is a local exact-title ISSN cache (gitignored, `uploader/magazine_issn.py:20-140`). It is not configured in `config.toml` — it lives at repo root `.cache/` and is created on demand. Columns: `title,print_issn,electronic_issn,issn,issn_l,source`. A magazine title that was successfully scraped once (via scraper warm, `OpenAlex`, manual `S...` URL, or Simurg browse) is persisted; the next file with the same exact title (casefold, e.g. `Penthouse` == `penthouse` but not `Playboy USA`) reuses `1019-5009` / `1019-5009` without network. Safe to delete; it rebuilds. Never commit it.
+
 ## Sections
 
 ### `[directory]`

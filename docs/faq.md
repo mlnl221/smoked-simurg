@@ -31,7 +31,7 @@ The tracker derives it from the passkey via `ajax.php?action=index` (`config.exa
 ## Upload flow
 
 **What exactly happens per file?**
-Decode inbuilt metadata → query every scraper fresh (ISBN then title+author) → interactive picker (or auto when 0/1 hits) → cross-ISBN enrichment offer → combine + per-field file-vs-scraper review → editor review (skippable) → dupe search + request check → cover rehost → stage/rename → private torrent (`source:SIM`, `piece 32768`) → upload POST (`docs/usage.md` step list, `simurg/cli.py`).
+Decode inbuilt metadata → query every scraper fresh (ISBN then title+author; magazines also check `.cache/magazine_issns.csv` exact-title reuse) → interactive picker (or auto when 0/1 hits; magazines also show `OpenAlex ... api_key=***` and offer manual `S...` paste, then Simurg browse fallback) → cross-ISBN enrichment offer → combine + per-field file-vs-scraper review → editor review (skippable, now shows `page_count`/`publisher`/`country`/`frequency` for magazines) → dupe search + request check → cover rehost → stage/rename → private torrent (`source:SIM`, `piece 32768`, padded `YYYY-MM-DD`) → upload POST. Dry-run still uses `.cache` and auto-applies first Simurg candidate (`docs/usage.md` step list, `simurg/cli.py`, `uploader/magazine_issn.py`).
 
 **What does `--dry-run` do?**
 Full interactive flow, staging, cover rehosting, and real `.torrent` written to `dottorrents_dir` — but no upload POST (`cli.py:794-820`, `README.md:100-101`). Use it to rehearse prompts and inspect outputs. Between-files tracker-less dry-run skips dupe search with a warning.
@@ -60,7 +60,10 @@ Encrypted PDFs (`isEncrypted`) abort with a skip message (`cli.py:860-868`). Sim
 MVP processes only the top level of `<directory>` (`cli.py:687-691`). Publisher packs of multiple volumes belong in one subdir and you should run `up` on that subdir (tip in `cli.py:737-739`). Otherwise each file becomes a separate torrent.
 
 **How does magazine filename parsing work?**
-`--category magazines` parses the canonical title + issue identity from the filename (e.g. `National Geographic - June 2020.pdf`) via `metadata/magazine.py:decode_magazine_filename`, then fills via magazine-only scrapers (`enricher.py:192-217`). Requires issue `year` plus `issue_date` or `issue_number` (volume when present, `rules.txt:130`). Upload payload uses `magazine_*` fields (`payload.py:195-281`).
+`--category magazines` parses the canonical title + issue identity from the filename (e.g. `National Geographic - June 2020.pdf` or bare `Penthouse 2002-02` without dash) via `metadata/magazine.py:decode_magazine_filename`, then fills via magazine-only scrapers (`enricher.py:192-217`). Requires issue `year` plus `issue_date` or `issue_number` (volume when present, `rules.txt:130`). Upload payload uses `magazine_*` fields (`payload.py:195-281`) and pads `magazine_issue_date` to `YYYY-MM-DD` (`payload.py:52-78`).
+
+**Why did my magazine upload fail with `Enter a valid issue date in YYYY-MM-DD format.`?**
+Month-precision `2002-02` and year-precision `2002` were previously sent verbatim; Simurg validates strictly `YYYY-MM-DD` even when `magazine_issue_date_precision` is `month`/`year`. The payload layer now pads to `2002-02-01` / `2002-01-01` (`payload.py:_magazine_issue_date_for_payload`, `mistakes.md:2026-08-26`).
 
 **Where do torrents and staged files go?**
 `dottorrents_dir` (default `.torrents`, per-tracker override `tracker.simurg.dottorrents_dir`) for `.torrent` files (`cli.py:827-839`). `staging_dir` (default `.staging`, fallback `upload_directory` → `.staging`) for renamed files (`config.example.toml:5`). Staged name: `{Title} - {Author} (year) [ISBN].ext`, `BLACKLISTED_CHARS` `[:?<>\\*|"/]` replaced with `_` (`constants.py:8`, `cli.py:35`).
@@ -71,10 +74,13 @@ Single-file, `private=1` (DHT/PEX/LPD disabled), `piece_length=32768`, `source:S
 ## Metadata and scrapers
 
 **Which scrapers are queried?**
-Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub`. Magazine-only: `OpenAlex` (ISSN via `/sources`), `InternetArchive`, `LibraryOfCongress`, `Crossref` (`enricher.py:55-68`). `DuckDuckGo` is cover-image fallback only when `cover_fallback_duckduckgo=true`. OpenAlex is also forced post-scrape to fill missing `print_issn`/`electronic_issn` for magazines (`cli.py:1133`, `scrapers/openalex.py`).
+Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub` (also `{ebook,magazine}`). Magazine-only: `OpenAlex` (ISSN/ISSN-L via `/sources`, needs `metadata.openalex_api_key`), `InternetArchive`, `LibraryOfCongress`, `Crossref`; plus `OpenLibrary`/`LibraryThing`/`WonderClub` (also `magazine`, WonderClub handles `/magazines/*` URLs). `DuckDuckGo` is cover-image fallback only when `cover_fallback_duckduckgo=true`. OpenAlex is also forced post-scrape to fill missing `print_issn`/`electronic_issn` for magazines, then Simurg itself is searched as fallback when OpenAlex misses (`uploader/magazine_issn.py:search_simurg_magazine_issns`).
 
 **Is scraper data cached?**
-No. Always queried fresh; no persistent cache (`enricher.py:1`, manual smoke test requirement in `AGENTS.md`).
+Mostly no — always queried fresh; no generic persistent cache (`enricher.py:1`, manual smoke test requirement in `AGENTS.md`). The only persistent cache is `.cache/magazine_issns.csv` exact-title ISSN reuse (`uploader/magazine_issn.py:20-140`): once a magazine title like `Penthouse` yields `1019-5009` / `1019-5009`, the next file with the same exact title (casefold) reuses it without scraping. Gitignored, safe to delete, columns `title,print_issn,electronic_issn,issn,issn_l,source`.
+
+**Why does a magazine show `1019-5009` for both ISSNs?**
+Some magazines use the same value for `ISSN` and `ISSN-L` (linking ISSN) — e.g. `1019-5009` for both `print` and `electronic` in `.cache` example. The code treats `ISSN-L` as the canonical print when distinct, otherwise both fields may be identical. The Simurg fallback prompts `Use it for BOTH print and electronic?` when only one distinct ISSN exists.
 
 **I got multiple scraper hits — what should I pick?**
 The picker shows one line per hit with `_scraper`, title, year, first two authors, publisher, pages, ISBN, fuzzy scores `t=`/`a=`, and first `source_url` as a clickable link (`cli.py:207-239`). Pick the one matching the file's edition. `[i]` keeps inbuilt-only, `[s]` skips file.
