@@ -1,0 +1,50 @@
+#!/bin/sh
+# .githooks/pre-commit — run ruff format on staged Python files
+# Version-controlled hook (see AGENTS.md). Enable with:
+#   git config core.hooksPath .githooks
+# This keeps hooks in the repo so fresh clones don't lose them.
+set -e
+
+# Resolve ruff binary: prefer venv, fall back to PATH or python -m ruff
+if [ -x ".venv/bin/ruff" ]; then
+    RUFF=".venv/bin/ruff"
+elif command -v ruff >/dev/null 2>&1; then
+    RUFF="ruff"
+elif [ -x ".venv/bin/python" ] && .venv/bin/python -m ruff --version >/dev/null 2>&1; then
+    RUFF=".venv/bin/python -m ruff"
+else
+    echo "pre-commit: ruff not found (tried .venv/bin/ruff, PATH, .venv/bin/python -m ruff) — skipping format" >&2
+    exit 0
+fi
+
+# Only format staged Python files (ACMR = added/copied/modified/renamed)
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR -- '*.py' 2>/dev/null || true)
+# git diff with pathspec returns empty when no .py staged; also handle shells without null
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+# Collect staged files that actually exist (handle deletions)
+FILES=""
+for f in $STAGED; do
+    if [ -f "$f" ]; then
+        FILES="$FILES $f"
+    fi
+done
+if [ -z "$FILES" ]; then
+    exit 0
+fi
+
+echo "pre-commit: running ruff format on staged Python files..." >&2
+# shellcheck disable=SC2086
+$RUFF format $FILES 2>&1
+
+# Re-stage files that were reformatted (so the commit includes the formatting)
+# shellcheck disable=SC2086
+git add $FILES 2>/dev/null || true
+
+# Optional: also auto-fix lint if ruff check is available (commented out to keep hook as 'format' only)
+# $RUFF check --fix $FILES 2>&1 || true
+# git add $FILES 2>/dev/null || true
+
+exit 0

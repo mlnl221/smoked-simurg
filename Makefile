@@ -78,7 +78,10 @@ format:
 	$(VENV)/bin/ruff check --fix .
 
 hooks:
-	$(VENV)/bin/pre-commit install
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath set to .githooks (version-controlled hook: ruff format)"
+	@echo "Hook active: .githooks/pre-commit will run 'ruff format' on staged .py files"
+	@echo "Tip: run '$(VENV)/bin/python -m pre_commit run --all-files' to also check via .pre-commit-config.yaml"
 
 clean:
 	rm -rf __pycache__ simurg/__pycache__ simurg/*/__pycache__ simurg/*/*/__pycache__ .torrents .failed .pytest_cache tests/__pycache__ .coverage

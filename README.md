@@ -126,6 +126,39 @@ fields (`magazine_*`); see `docs/PLAN.md §11`.
 - Source labels: `Retail/Scan/OCR/Convert/Other`.
 - `config.toml`, `.torrents/`, `.books/`, `*.torrent`, `.staging/` are gitignored.
 
+## Development
+
+### Code style & formatting
+
+- Python 3.11+, `ruff` (formatter + linter, config in `ruff.toml`), 4-space indent, double quotes.
+- `make lint` — check only (`ruff check` + `ruff format --check`)
+- `make format` — auto-format and auto-fix (`ruff format` + `ruff check --fix`)
+
+### Pre-commit hook (version-controlled)
+
+The repo keeps its pre-commit hook in `.githooks/pre-commit` (not in `.git/hooks`, which is not version-controlled and is lost on fresh clones). It runs `ruff format` on staged Python files and re-stages the result so the commit already contains the formatting.
+
+```bash
+# one-time setup after cloning (sets git core.hooksPath to the versioned dir)
+make hooks
+# equivalent manual command:
+git config core.hooksPath .githooks
+
+# verify
+git config --get core.hooksPath   # should print .githooks
+```
+
+Hook behavior:
+- Resolves `ruff` as `.venv/bin/ruff` → `$PATH` → `.venv/bin/python -m ruff`; skips gracefully if not found.
+- Only formats staged `*.py` files (`git diff --cached`), then `git add`s them back.
+- No secrets in the hook — safe to commit (checked via `cat .githooks/pre-commit`).
+
+Alternative / CI: the repo also ships `.pre-commit-config.yaml` (uses `astral-sh/ruff-pre-commit` `ruff --fix` + `ruff-format`). You can run it manually without installing the git hook:
+
+```bash
+.venv/bin/python -m pre_commit run --all-files
+```
+
 ## Verified Simurg upload payload
 
 Field names were **verified live** against `https://simurg.world/upload.php`
