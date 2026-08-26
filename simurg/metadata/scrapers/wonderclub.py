@@ -430,7 +430,7 @@ def _parse_page(html: str, url: str) -> dict | None:
             ):
                 continue
             # Also skip if parent chain contains a review type
-            parent = el.find_parent()
+            _ = el.find_parent()
             is_review = False
             for anc in el.parents:
                 try:
