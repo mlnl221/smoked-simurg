@@ -1,0 +1,32 @@
+# config.example.toml — copy to config.toml and fill; DO NOT COMMIT config.toml
+[directory]
+download_directory = ".books"
+dottorrents_dir = ".torrents"
+staging_dir = ".staging"  # renamed files are moved here before torrent creation; if empty, uses download_directory
+
+[image]
+cover_uploader = "ptscreens"  # ptscreens|imgbb|catbox
+ptscreens_key = ""
+imgbb_key = ""
+catbox_userhash = ""  # optional
+
+[metadata]
+googlebooks_key = ""
+cover_fallback_duckduckgo = true
+librarything_token = ""  # LibraryThing Talpa API token (also used as REST apikey)
+
+[tracker.simurg]
+session = ""          # browser cookie
+# api_key = ""        # optional
+announce_url = ""     # if empty, derive from passkey via ajax.php?action=index; else use personal URL https://tracker.simurg.world/.../announce
+# dottorrents_dir = ".torrents/simurg"
+
+[upload]
+user_agent = "simurg/0.1.0"
+# Editor for interactive metadata review (click.edit). Blank = $EDITOR, then nano.
+default_editor = ""
+log_dupe_tolerance = 0.5
+check_recent_uploads = true
+check_requests = true
+copy_uploaded_url_to_clipboard = false
+debug_tracker_connection = false

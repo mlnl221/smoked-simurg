@@ -1,0 +1,147 @@
+
+    Scope and quick summary
+    General torrent and payload rules
+    Catalogue and metadata rules
+        Source labels 
+    Duplicates, coexistence, and replacements
+    E-Books
+    Audiobooks
+    Comics & Manga
+    Magazines
+    After uploading 
+
+Scope and quick summary
+
+
+Simurg is a library tracker for E-Books, Audiobooks, Comics & Manga, and Magazines. These rules apply to every upload. Category guides explain the workflow in more detail, but this page takes precedence when guidance conflicts.
+
+Before uploading: inspect the complete payload, search for the Publication and possible duplicates, enter work and Release metadata in the correct fields, create the torrent from the final unchanged files, and be ready to seed it. If anything remains uncertain, send a Staff PM or ask in IRC before uploading.
+
+
+    Upload only supported library material. The enabled categories are E-Books, Audiobooks, Comics & Manga, and Magazines. Music, films, television, applications, games, general video courses, and unrelated files are not allowed.
+    Search before you upload. Search titles and variants, contributors, identifiers, language, publisher, year, format, and source. Open likely matches and compare the actual edition or production.
+    Inspect what you share. A filename, cover, retailer page, or source tracker description is not proof. Open and check the beginning, middle, and end of every logical release.
+    Seed a complete copy. Do not upload unless you can seed 100% of the exact payload. Keep your upload active until at least one other complete distributed copy exists, and continue seeding for long-term preservation whenever possible.
+    Ask before guessing. Uncertain category, source, edition, completeness, duplicate, or quality decisions must be reviewed before upload.
+
+
+
+General torrent and payload rules
+
+
+    Create a private torrent from the final payload. Do not rename, edit, add, remove, or replace files after creating the torrent. Never edit or share your personal Simurg announce URL or .torrent file.
+    Use clean, meaningful paths. File and folder names must identify their contents and sort in reading or listening order. Avoid unnecessary nesting. Preserve recognized source-release names when cross-seeding; ask staff if those names conflict with these rules.
+    Do not wrap releases in archives. ZIP, RAR, 7Z, or similar wrapper archives are prohibited. CBR and CBZ are allowed only as the actual supported comic or magazine format, not as wrappers around unrelated files.
+    Include only relevant files. Covers, chapter data, checksums, and other small supporting files are allowed when they belong to the release. Remove executables, advertisements, download-site links, unrelated samples, thumbnails, proof folders, duplicate files, and hidden operating-system files.
+    Protect members and the tracker. Malware, password-protected or DRM-locked payloads, personal account details, order numbers, passkeys, personally identifying watermarks, and other private information are prohibited.
+    Do not misrepresent quality or provenance. Corrupt, materially incomplete, unreadable, falsely labelled, or severely broken releases are not allowed. Known non-material limitations must be disclosed in the Release description.
+    Follow the live Do Not Upload list. Anything listed at the top of the Upload page is forbidden unless its stated exception clearly applies.
+
+
+
+Catalogue and metadata rules
+
+
+Simurg separates stable Publication identity from edition-, production-, issue-, pack-, and file-specific Release information.
+
+    Reuse the correct Publication. Select an existing Publication when it represents the same work, series, or magazine. Create a new one only when that catalogue identity is genuinely missing.
+    Keep canonical and Release titles separate. The canonical title identifies the work or periodical. Translation, edition, volume, issue, production, and pack wording belongs in the Release title or notes.
+    Use the correct dates. First published records the original work or publication date. Release year records the uploaded edition, audiobook production, comic edition, or magazine issue or pack.
+    Credit canonical contributors by role. Use consistent identities and add authors or writers, narrators, translators, editors, and illustrators only in their correct fields. Do not put contributor names or technical metadata in title fields.
+    Describe the represented edition or production. Language, publisher, identifier, duration, issue or volume coverage, and other metadata must match the uploaded files, not merely the work in general.
+    Use a matching cover. Use a clean direct image link for the represented Publication or Release. Do not hotlink a source tracker, use a random franchise image, or expose a local file path or personal account URL.
+    Tag content, not files. Use accurate genre, subject, and required type tags. Format, source, retailer, release group, and praise such as best or must-read do not belong in tags.
+    Write useful descriptions. The canonical synopsis describes the Publication. Release notes and file descriptions record edition, production, coverage, source, quality, and known defects. Do not include advertising, personal credits, passkeys, or unapproved download links.
+
+
+
+Source labels
+
+
+    Retail means a born-digital file obtained from an authorized publisher or retail distribution channel. A clean appearance alone does not prove Retail provenance.
+    Scan means page images produced from a physical publication.
+    OCR means a scanned publication reconstructed or enhanced with optical character recognition. Check searchable text throughout the file.
+    Convert means a file derived from another digital format. State the known input format and material conversion details.
+    Other means a known source that fits none of the labels above. Explain it in the description; it is not a wildcard for uncertainty.
+
+
+
+Duplicates, coexistence, and replacements
+
+
+    Duplicate files are not allowed. A release is normally a duplicate when the Publication, edition or production, language, format, source, and substantive content match an existing torrent. Renaming files, rebuilding the torrent, changing compression, or adding a cover does not create a new release.
+    Meaningful alternatives may coexist. Different languages or translations, genuine editions, publishers, identifiers, accepted formats, sources, audiobook productions, or materially different quality may coexist when documented accurately.
+    Packaging alone is not always a new edition. A publisher-issued set, comic run, or magazine pack may be valid under its category rules. An arbitrary bundle of unrelated works is not.
+    Better means materially better. Larger size or higher nominal bitrate alone is not enough. A valid replacement fixes a material defect such as missing pages, severe OCR errors, broken navigation, corruption, false labelling, or clearly inferior source quality.
+    Do not replace a torrent merely because it is temporarily unseeded. Request a reseed and attempt to recover the exact payload first. If replacement is necessary, document why recovery was not possible.
+    Report duplicates and valid replacements. Identify both torrents, the decisive rule, and the exact evidence. Do not delete or overwrite another member's torrent unless your permissions and the report workflow authorize it.
+
+
+
+See Duplicates and Coexisting Editions and Reporting Torrents and Metadata Problems.
+
+E-Books
+
+
+    Allowed formats are EPUB, PDF, MOBI, AZW3, and DJVU. CBR and CBZ belong in Comics & Manga or Magazines and must not be mislabelled as E-Books.
+    Keep one work or publisher-issued set per torrent. Do not create convenience packs of unrelated books. Distinct volumes should be identified clearly.
+    Test the reading experience. Check completeness, navigation, chapter order, text flow, fonts, special characters, footnotes, images, page order, cropping, rotation, and readability as applicable.
+    Identify the exact edition. Verify displayed title, contributors, language, publisher, publication year, ISBN when present, and source from the file itself.
+    Disclose conversion and scan limitations. State weak OCR, missing searchable text, unusual pagination, annotations, repaired pages, or known layout defects.
+
+
+
+See E-Book Upload Guide and E-Book Quality and Source Guide.
+
+Audiobooks
+
+
+    Allowed formats are MP3, M4B, FLAC, and Other when explained. Select the bitrate or lossless quality that matches the actual audio stream.
+    Keep one audiobook production per torrent. Multi-file chapters are allowed; unrelated books, productions, or convenience packs are not.
+    Record production metadata. Provide narrator or narrators, production year, language, Unabridged, Abridged, or Dramatized status, total duration, publisher or studio when known, format, and bitrate.
+    Check the complete listening order. Sample the beginning, middle, and end; confirm every file opens, chapters sort correctly, tags are useful, and duration is plausible.
+    Do not transcode for appearances. Lossy-to-lossless transcodes, upsampled audio, invented bitrates, and conversions that add no preservation or compatibility value are prohibited. FLAC must come from a lossless source.
+    Preserve valid audiobook structure. Embedded chapters and cover art, cue or playlist data, and clean sidecars are allowed when they belong to the production.
+
+
+
+See Audiobook Upload Guide.
+
+Comics & Manga
+
+
+    Allowed formats are CBR, CBZ, and PDF. Select Comic, Graphic Novel, Manga, Manhwa, Manhua, or Webtoon using the most specific type supported by the source.
+    Keep one title or series per torrent. A single issue, collected volume, or clearly labelled complete issue run of the same series is valid. Do not combine unrelated titles or unrelated volumes.
+    State exact coverage. Record the included issue or volume range, edition, language, publisher, and any missing material in the Release notes or description.
+    Verify every archive and reading order. Open CBR or CBZ files in a comic reader and check early, middle, and final pages. Images and files must sort correctly and remain readable.
+    Use comic-specific contributor roles. Writer is the primary contributor. Add illustrators and translators when identified by the represented edition.
+    Do not bypass category validation. Sequential art belongs here; do not upload CBR or CBZ as E-Books or use Comic as a fallback for material that has not been identified as sequential art.
+
+
+
+See Comics and Manga Upload Guide.
+
+Magazines
+
+
+    Allowed formats are PDF, CBR, CBZ, and DJVU. The supported sources are Retail, Scan, OCR, Convert, and explained Other.
+    Use Magazines only for magazines. Newspapers, academic journals, newsletters, and other periodicals are outside the current category unless staff approves a documented exception.
+    Choose the correct Release type. Use Individual Issue, Year Pack, Decade Pack, Complete Run, or Custom Range according to the payload.
+    Identify individual issues precisely. Supply the issue year and at least an issue date or issue number. Add volume information when present.
+    Document every pack. Supply coverage start and end, included-issue count, one manifest entry per issue, and an honest completeness declaration. Partial packs are allowed but must never be labelled complete.
+    Respect pack coexistence. Packs may overlap individual issues. A partial pack cannot replace individual issues. A complete pack is eligible for staff-reviewed replacement only when its manifest covers the issue, every file is readable, its labels are accurate, and it is stably seeded.
+    Keep Publication metadata stable. Use the canonical magazine title, first-publication year, ISSN when known, publisher, country, and frequency. Editors and article contributors belong in Release notes unless the catalogue explicitly supports them.
+
+
+
+After uploading
+
+
+    Verify all three states. The torrent must exist on Simurg, your permitted client must report a successful tracker announce, and Simurg must show the complete torrent as seeding.
+    Correct mistakes promptly. Fix editable metadata yourself when permitted. Report duplicate, replacement, broken, or removal cases with evidence instead of silently uploading another copy.
+    Keep the payload available. Moving or renaming files without relocating them in the client breaks preservation. Force a recheck after any legitimate move and resume only at 100%.
+    Use approved clients and private-tracker settings. Follow the Client Rules. Keep DHT, PEX, and Local Peer Discovery disabled for private torrents, and never add another tracker's announce URL to a Simurg torrent.
+
+
+
+See Seeding, Reseeding, and Troubleshooting. Staff may remove prohibited or duplicate uploads, correct metadata, mark a release for replacement, or apply account consequences for deliberate or repeated violations. Honest uncertainty raised before uploading will always be handled more favorably than guessing. 

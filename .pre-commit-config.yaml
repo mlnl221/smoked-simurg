@@ -1,0 +1,10 @@
+# Pre-commit hooks — run ruff (lint + format) automatically before every commit.
+# Installed locally via: pre-commit install   (see Makefile `make hooks`)
+# https://github.com/astral-sh/ruff-pre-commit
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format

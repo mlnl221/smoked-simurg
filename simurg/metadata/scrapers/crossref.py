@@ -1,0 +1,49 @@
+"""Crossref scraper — periodical metadata where indexed (e.g. National Geographic)."""
+
+from __future__ import annotations
+
+from simurg.metadata.scrapers.base import BaseScraper
+from simurg.metadata.scrapers.util import clean_issn, year_from
+
+
+class CrossrefScraper(BaseScraper):
+    name = "crossref"
+    categories = {"magazine"}
+
+    def search_isbn(self, isbn: str):
+        return None
+
+    def search_title_author(self, title: str, authors: list[str]):
+        return None
+
+    def search_magazine(self, title: str, issue: dict | None = None) -> dict | None:
+        try:
+            url = "https://api.crossref.org/works"
+            params = {"query.bibliographic": title, "rows": 5, "filter": "type:journal"}
+            r = self.session.get(url, params=params, timeout=10)
+            if r.status_code != 200:
+                return None
+            items = r.json().get("message", {}).get("items", [])
+            for it in items:
+                t = it.get("title")
+                if isinstance(t, list):
+                    t = t[0] if t else None
+                if not t:
+                    continue
+                issns = it.get("ISSN") or []
+                issued = it.get("issued", {}).get("date-parts", [[]])[0]
+                year = issued[0] if issued else None
+                publisher = it.get("publisher")
+                return {
+                    "title": t,
+                    "first_published": year_from(year),
+                    "print_issn": clean_issn(issns[0]) if len(issns) >= 1 else None,
+                    "electronic_issn": clean_issn(issns[1]) if len(issns) >= 2 else None,
+                    "publisher": publisher,
+                    "country": None,
+                    "frequency": None,
+                    "source_urls": [it["URL"]] if isinstance(it.get("URL"), str) else [],
+                }
+            return None
+        except Exception:
+            return None
