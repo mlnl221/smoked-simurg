@@ -181,6 +181,7 @@ class AbeBooksScraper(BaseScraper):
                 "publisher": None,
                 "year": None,
                 "publish_year": None,
+                "first_publish_year": None,
                 "page_count": None,
                 "isbn": None,
                 "language": None,
@@ -241,6 +242,7 @@ class AbeBooksScraper(BaseScraper):
             "publisher": None,
             "year": None,
             "publish_year": None,
+            "first_publish_year": None,
             "page_count": None,
             "isbn": None,
             "language": None,
@@ -256,6 +258,7 @@ class AbeBooksScraper(BaseScraper):
         data["publisher"] = pub_name
         data["year"] = pub_year
         data["publish_year"] = pub_year
+        data["first_publish_year"] = None
 
         data["page_count"] = self._parse_pages(soup)
         data["language"] = self._parse_language(soup)

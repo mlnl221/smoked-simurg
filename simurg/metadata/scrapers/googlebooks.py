@@ -233,6 +233,7 @@ class GoogleBooksScraper(BaseScraper):
             "publisher": publisher,
             "year": year,
             "publish_year": year,
+            "first_publish_year": None,
             "page_count": page_count,
             "isbn": isbn,
             "language": vi.get("language"),

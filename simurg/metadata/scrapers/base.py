@@ -24,10 +24,26 @@ class BaseScraper(abc.ABC):
         self.session.headers.update({"User-Agent": "simurg/0.1.0 (+https://simurg.world)"})
 
     @abc.abstractmethod
-    def search_isbn(self, isbn: str) -> dict | None: ...
+    def search_isbn(self, isbn: str) -> dict | None:
+        """Return normalized ebook dict or None.
+
+        Contract (see docs/ebook.txt S7-S12):
+          title (str), authors (list), publisher (str|None), isbn (str|None),
+          year / publish_year (int|None) - **Release/edition year** (specific
+          edition being uploaded),
+          first_publish_year (int|None) — **Publication/work year** (original
+          first published, Publication-level per docs/ebook.txt:12),
+          page_count (int|None) — Release-level, language, subjects/tags,
+          description, cover_url, source_urls.
+        Only OpenLibrary reliably provides first_publish_year; other scrapers
+        may return None for it (handled as unknown in combine).
+        """
+        ...
 
     @abc.abstractmethod
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None: ...
+    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
+        """Same contract as search_isbn, title+author query."""
+        ...
 
     def search_magazine(self, title: str, issue: dict | None = None) -> dict | None:
         """Optional magazine lookup. Ebook-only scrapers return None.

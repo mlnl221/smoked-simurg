@@ -90,6 +90,7 @@ class BookBrainzScraper(BaseScraper):
                 "publisher": publisher,
                 "year": year,
                 "publish_year": year,
+                "first_publish_year": None,
                 "page_count": data.get("pages"),
                 "isbn": isbn,
                 "language": languages[0] if languages else None,

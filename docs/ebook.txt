@@ -1,0 +1,1217 @@
+Absolutely — for **e-books only**, I’d make the AI instructions much more opinionated and remove audiobook/comic/magazine logic entirely.
+
+# Simurg E-Book Upload — AI Field Instructions
+
+## Role
+
+You are preparing metadata for an **E-Book upload** to Simurg.
+
+Your job is to identify the correct Publication, distinguish Publication metadata from Release metadata, extract information from the actual e-book, and populate fields accurately.
+
+**Never invent metadata.** If information cannot be reliably established, leave the field blank or flag it for human review.
+
+The actual uploaded file is the primary source of truth. A filename, cover image, retailer listing, or search result alone is not sufficient evidence for file-specific metadata.
+
+---
+
+# 1. Upload
+
+## Torrent file
+
+**Intended data:** The `.torrent` file corresponding to the final, unchanged e-book payload.
+
+**Instructions:**
+
+* The torrent must correspond exactly to the files being uploaded.
+* Do not rename, modify, add, remove, or replace files after the torrent is created.
+* Do not alter the personal announce URL.
+* Do not expose authentication credentials or private tracker information.
+
+---
+
+## Type
+
+**Intended data:**
+
+`E-Books`
+
+**Instructions:**
+Always select `E-Books` when this workflow is being used.
+
+Do not use this workflow for audiobooks, comics/manga, magazines, music, movies, software, games, or other material.
+
+---
+
+# 2. Publication identification
+
+## Find existing Publication
+
+**Intended data:** The existing Simurg Publication representing the same underlying book/work.
+
+**Instructions:**
+
+Search extensively before creating a new Publication.
+
+Search using:
+
+* canonical title;
+* alternate titles;
+* original author;
+* translator;
+* ISBN;
+* publisher;
+* original publication year;
+* language;
+* edition information;
+* title variations.
+
+When a Publication representing the same underlying work already exists, **select it instead of creating a duplicate**.
+
+A different:
+
+* edition;
+* publisher;
+* year;
+* translation;
+* ISBN;
+* file format;
+* retail release;
+* conversion;
+* source
+
+does **not automatically mean a new Publication**.
+
+Create a new Publication only when the underlying work genuinely does not already exist in the catalogue.
+
+---
+
+# 3. Contributors
+
+## Original author
+
+**Intended data:** The original author or creator of the book.
+
+**Instructions:**
+
+* Use the canonical author identity.
+* Do not put the translator, editor, or illustrator here unless that person is also an actual author/creator.
+* Do not put narrator information here.
+* Do not put publisher information here.
+* Do not put technical/file information here.
+* Do not guess an author from a filename alone.
+
+For multiple authors, identify each actual author separately where the interface permits.
+
+---
+
+## Translator (optional)
+
+**Intended data:** The translator responsible for the specific translated e-book.
+
+**Instructions:**
+
+* Populate only when the e-book is a translation and the translator can be established.
+* Use the actual credited translator.
+* Do not confuse the translator with the original author.
+* Do not guess the translator from the language.
+* Leave blank when not applicable or unknown.
+
+---
+
+## Editor (optional)
+
+**Intended data:** The editor credited for the particular edition.
+
+**Instructions:**
+
+* Populate when the edition explicitly credits an editor.
+* Use the actual credited editor.
+* Do not use this field for the publisher.
+* Do not infer an editor merely because the book has been professionally published.
+* Leave blank when not applicable or reliably unknown.
+
+---
+
+## Illustrator (optional)
+
+**Intended data:** The illustrator credited with illustrations in the work/edition.
+
+**Instructions:**
+
+* Populate when an illustrator is explicitly credited.
+* Do not automatically treat the cover artist as the illustrator.
+* Do not guess.
+* Leave blank when not applicable.
+
+---
+
+# 4. Titles
+
+## Canonical Publication title
+
+**Intended data:** The stable, canonical title of the underlying book/work.
+
+**Instructions:**
+Use the title that identifies the work independently of this particular e-book release.
+
+Do **not** include:
+
+* EPUB;
+* PDF;
+* MOBI;
+* AZW3;
+* retail;
+* scan;
+* OCR;
+* conversion information;
+* release group names;
+* file names;
+* upload/source information;
+* unnecessary edition labels.
+
+A translated or edition-specific title should not be used to incorrectly rename the underlying Publication.
+
+If an existing Publication is selected, treat its canonical title as authoritative and do not change it.
+
+---
+
+## First published
+
+**Intended data:** The year in which the underlying work was originally first published.
+
+**Instructions:**
+
+This is **not** the year of the e-book.
+
+This is **not** the year of the particular edition.
+
+This is **not** the copyright year of the uploaded file unless that happens to be the original publication year.
+
+Example:
+
+* Original work: 1984
+* Uploaded e-book edition: 2021
+
+`First published = 1984`
+
+Use the original work's publication history, not the Release's publication date.
+
+---
+
+## Release title
+
+**Intended data:** The title identifying the particular e-book edition/release.
+
+**Instructions:**
+
+Use this field for legitimate Release-specific distinctions such as:
+
+* revised edition;
+* second edition;
+* anniversary edition;
+* illustrated edition;
+* translated edition;
+* special edition;
+* expanded edition;
+* annotated edition.
+
+The Release title may match the canonical Publication title when there is no meaningful distinction.
+
+Do not use this field for:
+
+* `EPUB`;
+* `PDF`;
+* `Retail`;
+* `Scan`;
+* `OCR`;
+* `Convert`;
+* release-group names;
+* uploader's name;
+* arbitrary quality claims.
+
+---
+
+## Release publication year
+
+**Intended data:** The publication year of the specific e-book edition being uploaded.
+
+**Instructions:**
+
+Use the year associated with the actual edition represented by the file.
+
+Example:
+
+* Original work: 1950
+* Uploaded edition: 2020
+
+`First published = 1950`
+
+`Release publication year = 2020`
+
+Do not substitute the original publication year for the Release year.
+
+If the file is a conversion of a particular edition, identify the edition being represented rather than treating the conversion date as the publication year.
+
+---
+
+# 5. Tags
+
+## Tags
+
+**Intended data:** Genre and subject tags describing the content of the book.
+
+**Instructions:**
+
+Use tags that describe the **book itself**, not the uploaded file.
+
+Good examples:
+
+* `fantasy`
+* `history`
+* `biography`
+* `programming`
+* `psychology`
+* `science.fiction`
+* `self-help`
+* `philosophy`
+
+Multiple tags must be comma-separated.
+
+Use dots or simple dashes for multi-word tags.
+
+### Tag rules
+
+Use:
+
+* accurate genres;
+* meaningful subjects;
+* established descriptive categories.
+
+Avoid:
+
+* abbreviations when a full term exists;
+* duplicate synonyms;
+* subjective praise;
+* popularity claims;
+* uploader-specific terminology.
+
+Do **not** use tags such as:
+
+* `epub`
+* `pdf`
+* `mobi`
+* `azw3`
+* `retail`
+* `scan`
+* `ocr`
+* `convert`
+* `ebook`
+* `bestseller`
+* `awesome`
+* `must.read`
+
+The tags must remain valid for the **Publication as a whole**, not merely this particular file.
+
+If uncertain whether a tag is appropriate, omit it.
+
+---
+
+# 6. Image
+
+## Image (optional)
+
+**Intended data:** A clean direct URL to the appropriate book cover.
+
+**Instructions:**
+
+For a new Publication:
+
+* Prefer artwork representing the underlying work.
+
+For a Release:
+
+* Prefer artwork corresponding to the exact e-book edition when available.
+
+Prefer an image approximately 500×500 or larger.
+
+Do not use:
+
+* random images;
+* unrelated franchise artwork;
+* personal account URLs;
+* local filesystem paths;
+* tracker pages as image URLs;
+* fabricated URLs.
+
+Do not treat finding a cover image as proof of edition metadata.
+
+---
+
+# 7. E-book metadata
+
+## Language
+
+**Intended data:** The language of the actual uploaded e-book.
+
+**Instructions:**
+Determine the language from the actual contents of the file.
+
+Do not infer language solely from:
+
+* author nationality;
+* publisher;
+* original work;
+* filename.
+
+If the uploaded e-book is a translation, use the language of the uploaded translation.
+
+---
+
+## Publisher
+
+**Intended data:** The publisher associated with the specific edition represented by the uploaded e-book.
+
+**Instructions:**
+Use the publisher shown in the actual edition's metadata/copyright/title pages or other reliable edition information.
+
+Do not automatically use:
+
+* the publisher of another edition;
+* the original publisher of the work;
+* the retailer selling the file.
+
+If multiple publisher names appear, determine which one actually corresponds to the edition being represented.
+
+Never fabricate a publisher.
+
+---
+
+## ISBN
+
+**Intended data:** The ISBN belonging to the specific edition represented by the uploaded e-book.
+
+**Instructions:**
+
+* Prefer the ISBN explicitly associated with the actual edition.
+* Check the e-book's metadata and copyright/title pages.
+* Do not copy an ISBN from a different edition merely because the title and author match.
+* Do not fabricate or mathematically invent an ISBN.
+* If no reliable ISBN exists, leave the field blank.
+
+An ISBN is **edition-specific**, so treat it as Release metadata.
+
+---
+
+## Page count
+
+**Intended data:** The page count associated with the actual e-book edition when meaningful and available.
+
+**Instructions:**
+
+* Prefer the page count explicitly associated with the edition.
+* Do not blindly copy the page count from another edition.
+* Do not treat the number of HTML files, chapters, or screens as a publisher page count.
+* Do not invent a page count.
+* If a reliable page count cannot be established, leave it blank rather than guessing.
+
+---
+
+# 8. Publication description
+
+## Canonical Publication synopsis
+
+**Intended data:** A concise synopsis describing the underlying book/work.
+
+**Instructions:**
+
+Describe the **work itself**, not the particular e-book file.
+
+The synopsis should remain valid if a completely different edition of the same book is uploaded later.
+
+Include relevant:
+
+* premise;
+* subject;
+* themes;
+* setting;
+* purpose;
+* content overview.
+
+Do not include:
+
+* EPUB/PDF information;
+* file size;
+* scan quality;
+* OCR quality;
+* conversion information;
+* publisher-specific edition details;
+* uploader information;
+* download instructions;
+* private information;
+* tracker credentials;
+* unsupported claims.
+
+If an existing Publication is selected, do not replace its established Publication synopsis.
+
+---
+
+# 9. Release-specific information
+
+## Release notes (optional)
+
+**Intended data:** Information distinguishing this specific e-book edition from the underlying Publication.
+
+Use for information such as:
+
+* edition;
+* revision;
+* translation;
+* publisher-specific edition information;
+* special/anniversary edition;
+* volume information;
+* other legitimate edition-specific details.
+
+Example:
+
+`Revised edition published by [publisher], with updated material and a new translation.`
+
+Do not put file-format or technical conversion details here unless they are genuinely relevant to identifying the Release.
+
+---
+
+## Format
+
+**Intended data:** The actual digital format of the uploaded e-book.
+
+**Allowed values shown by the form:**
+
+* `EPUB`
+* `PDF`
+* `MOBI`
+* `AZW3`
+* `DJVU`
+
+**Instructions:**
+
+Select the format based on the actual uploaded file.
+
+Do not infer format from:
+
+* the book title;
+* the cover;
+* a retailer listing;
+* the source label.
+
+Do not put format information into Tags.
+
+---
+
+## Source
+
+**Intended data:** The actual provenance of the uploaded e-book.
+
+**Allowed values:**
+
+* `Retail`
+* `Scan`
+* `OCR`
+* `Convert`
+* `Other`
+
+### Retail
+
+Use only when the e-book is a born-digital file obtained through an authorized publisher or retail distribution channel.
+
+A clean-looking EPUB/PDF is **not sufficient evidence** that it is Retail.
+
+### Scan
+
+Use when the e-book consists of page images produced from a physical book.
+
+### OCR
+
+Use when the scanned publication has been reconstructed or enhanced using optical character recognition.
+
+Check the actual file before assigning OCR.
+
+### Convert
+
+Use when the uploaded e-book was derived from another digital format.
+
+If known, record the input format and relevant conversion information in the Release description.
+
+### Other
+
+Use only when the known source genuinely does not fit the other categories.
+
+Do not use `Other` simply because the source is unknown.
+
+If provenance cannot be established, flag it for human review rather than guessing.
+
+---
+
+# 10. File-specific description
+
+## Release description (optional)
+
+**Intended data:** Accurate information about the actual uploaded e-book file.
+
+Use this field for relevant details such as:
+
+* conversion history;
+* input format;
+* OCR characteristics;
+* scan quality;
+* formatting problems;
+* known missing material;
+* known defects;
+* other technical characteristics;
+* relevant provenance details.
+
+Example:
+
+`Converted from the original EPUB edition. Minor formatting inconsistencies are present in several chapter headings.`
+
+Be factual and conservative.
+
+Do not claim:
+
+* "perfect";
+* "flawless";
+* "highest quality";
+* "official";
+* "retail"
+
+unless the evidence supports the claim.
+
+Do not include:
+
+* passwords;
+* authentication keys;
+* personal information;
+* account details;
+* unauthorized download links;
+* advertisements;
+* unrelated information.
+
+---
+
+# 11. E-book inspection requirements
+
+Before assigning metadata, inspect the actual e-book whenever possible.
+
+Check:
+
+* title page;
+* copyright/publication page;
+* author information;
+* translator/editor/illustrator credits;
+* publisher;
+* publication/edition information;
+* ISBN;
+* language;
+* table of contents;
+* beginning of the book;
+* middle of the book;
+* end of the book;
+* completeness;
+* readability;
+* formatting;
+* embedded metadata.
+
+Do not rely solely on filename or external search results.
+
+---
+
+# 12. Publication vs. Release decision rule
+
+Use this rule whenever uncertain:
+
+**Publication = "What work is this?"**
+
+**Release = "Which specific edition/file of that work is this?"**
+
+### Publication-level
+
+* Canonical Publication title
+* Original author
+* First published
+* Canonical Publication synopsis
+* Stable work identity
+* General work-level tags
+
+### Release-level
+
+* Release title
+* Release publication year
+* Translator
+* Edition-specific editor/illustrator
+* Language
+* Publisher
+* ISBN
+* Page count
+* Release notes
+* Format
+* Source
+* Release description
+* Edition-specific cover
+
+When a piece of information changes between editions, it generally belongs to the **Release**, not the stable Publication.
+
+---
+
+# 13. Final AI validation
+
+Before submitting an e-book upload, verify all of the following:
+
+* [ ] The material is actually an e-book.
+* [ ] The correct existing Publication has been searched for.
+* [ ] A duplicate Publication is not being created unnecessarily.
+* [ ] The canonical title represents the underlying work.
+* [ ] The Release title represents the particular edition when necessary.
+* [ ] First published is the original work's publication year.
+* [ ] Release publication year is the specific edition's year.
+* [ ] Author/contributors are assigned to the correct roles.
+* [ ] Language matches the uploaded e-book.
+* [ ] Publisher matches the actual edition.
+* [ ] ISBN belongs to the actual edition.
+* [ ] Page count is supported by reliable evidence.
+* [ ] Tags describe the book's content rather than the file.
+* [ ] No format/source tags have been added.
+* [ ] The Publication synopsis describes the work rather than the file.
+* [ ] Release notes describe the particular edition.
+* [ ] Format matches the actual file.
+* [ ] Source accurately represents provenance.
+* [ ] Release description accurately describes file-specific characteristics.
+* [ ] The e-book has been checked for completeness and readability.
+* [ ] No prohibited or unrelated files are included.
+* [ ] No private information or authentication credentials are included.
+* [ ] No metadata has been fabricated.
+* [ ] Any unresolved uncertainty has been flagged for human review.
+
+## Absolute rule
+
+**When evidence conflicts, do not guess. Identify the conflict and request human review.**
+
+Accuracy is more important than filling every field.
+
+
+
+The easiest way to teach your AI these four fields is to make the distinction very explicit:
+
+# Simurg E-Book: Title and Date Field Definitions
+
+These four fields must be treated as **two separate levels of information**:
+
+* **Publication = the underlying book/work**
+* **Release = the specific edition of that book being uploaded**
+
+The AI must never confuse the identity of the original work with the identity of the particular edition.
+
+---
+
+## 1. Canonical Publication Title
+
+### What it means
+
+The **Canonical Publication Title** is the permanent, catalogue-level title of the **underlying work**.
+
+Think of this as:
+
+> **"What is the actual book/work?"**
+
+It is the title that should remain stable even when different editions, translations, publishers, or digital versions of that work are uploaded.
+
+### What belongs here
+
+Use the book's normal, canonical title.
+
+Examples:
+
+| Situation                   | Canonical Publication Title |
+| --------------------------- | --------------------------- |
+| Original novel              | `Dune`                      |
+| Different hardcover edition | `Dune`                      |
+| Different paperback edition | `Dune`                      |
+| EPUB edition                | `Dune`                      |
+| PDF edition                 | `Dune`                      |
+| 50th anniversary edition    | `Dune`                      |
+| Revised edition             | `Dune`                      |
+| New publisher               | `Dune`                      |
+| New ISBN                    | `Dune`                      |
+| Different digital format    | `Dune`                      |
+
+The fact that the uploaded file is a particular edition does **not** normally change the Canonical Publication Title.
+
+### What does NOT belong here
+
+Do not add information that identifies only the particular Release.
+
+Do not turn it into something like:
+
+* `Dune (50th Anniversary Edition)`
+* `Dune - 2021 Edition`
+* `Dune [EPUB]`
+* `Dune [Retail]`
+* `Dune [PDF]`
+* `Dune - Revised Edition`
+* `Dune - Illustrated Edition`
+
+unless that wording is genuinely part of the work's canonical title rather than merely describing the edition.
+
+### Important rule
+
+**Canonical Publication Title answers:**
+
+> "What work does this Publication represent?"
+
+It does **not** answer:
+
+> "What exact edition/file am I uploading?"
+
+---
+
+# 2. Release Title
+
+### What it means
+
+The **Release Title** identifies the **specific edition or version of the work represented by the uploaded e-book**.
+
+Think of this as:
+
+> **"Which particular version/edition of this book am I uploading?"**
+
+The Release Title can therefore contain legitimate edition-specific distinctions that should not alter the stable Publication identity.
+
+### Examples
+
+Suppose the underlying work is:
+
+`Dune`
+
+The Publication remains:
+
+**Canonical Publication Title:** `Dune`
+
+But different Releases might be:
+
+**Release Title:** `Dune`
+
+**Release Title:** `Dune: 50th Anniversary Edition`
+
+**Release Title:** `Dune: Illustrated Edition`
+
+**Release Title:** `Dune: Revised Edition`
+
+**Release Title:** `Dune — Second Edition`
+
+The exact wording should be based on how the actual edition is identified by reliable metadata/source material.
+
+### Translations
+
+A translated edition may have a different Release Title.
+
+For example, suppose the original work is:
+
+**Canonical Publication Title:** `The Little Prince`
+
+A particular translated Release could have:
+
+**Release Title:** `The Little Prince`
+
+while the translator is recorded separately in the **Translator** field.
+
+If the actual published edition has a legitimate translated title, use that title for the Release while keeping the underlying Publication identity stable.
+
+### What does NOT belong in Release Title
+
+Do not use Release Title as a dumping ground for technical information.
+
+Do not create titles such as:
+
+`Dune EPUB Retail 2021 500MB`
+
+or:
+
+`Dune - EPUB - Retail - Converted`
+
+These are not titles.
+
+Format belongs in **Format**.
+
+Provenance belongs in **Source**.
+
+Conversion information belongs in **Release description**.
+
+Edition information belongs in **Release Title** or **Release notes**, when appropriate.
+
+### Important rule
+
+**Release Title answers:**
+
+> "What specific edition/version of this work does this Release represent?"
+
+---
+
+# 3. First Published
+
+### What it means
+
+**First Published** is the year the **underlying work was originally published for the first time**.
+
+Think:
+
+> **"When did this work originally come into existence as a published work?"**
+
+This date belongs to the **Publication**, not to the particular e-book file.
+
+### Example
+
+Suppose:
+
+* A novel was originally published in `1965`.
+* A paperback edition was published in `1990`.
+* A digital edition was published in `2015`.
+* You are uploading the 2015 e-book.
+
+The fields should be:
+
+**Canonical Publication Title:** `Example Novel`
+
+**First Published:** `1965`
+
+**Release Publication Year:** `2015`
+
+The fact that you are uploading a 2015 e-book does **not** change First Published to 2015.
+
+### More examples
+
+| Original work                  | Uploaded edition | First Published |
+| ------------------------------ | ---------------: | --------------: |
+| Work originally published 1950 |      2020 e-book |          `1950` |
+| Work originally published 1987 |      2019 e-book |          `1987` |
+| Work originally published 2003 |      2024 e-book |          `2003` |
+| Work originally published 1667 |     1968 edition |          `1667` |
+
+### Revised editions
+
+Suppose a book was originally published in:
+
+`1998`
+
+A substantially revised edition was released in:
+
+`2018`
+
+The Publication still has:
+
+**First Published:** `1998`
+
+The Release has:
+
+**Release Publication Year:** `2018`
+
+### Important rule
+
+**First Published answers:**
+
+> "When was the underlying work first published?"
+
+It does **not** answer:
+
+> "When was this particular edition published?"
+
+---
+
+# 4. Release Publication Year
+
+### What it means
+
+**Release Publication Year** is the year associated with the **specific edition represented by the uploaded e-book**.
+
+Think:
+
+> **"When was this particular edition/release published?"**
+
+This is different from the original work's publication year.
+
+### Example
+
+A book was originally published in:
+
+`1984`
+
+You are uploading a 2021 edition.
+
+The fields are:
+
+**First Published:** `1984`
+
+**Release Publication Year:** `2021`
+
+### Another example
+
+A book was originally published in 1925.
+
+A publisher released a new e-book edition in 2023.
+
+Use:
+
+**First Published:** `1925`
+
+**Release Publication Year:** `2023`
+
+### Different editions
+
+Imagine the following history:
+
+| Event                   | Year |
+| ----------------------- | ---: |
+| Original work published | 1955 |
+| Revised edition         | 1982 |
+| New edition             | 2001 |
+| Digital edition         | 2019 |
+
+If the uploaded file represents the 2019 edition:
+
+**First Published:** `1955`
+
+**Release Publication Year:** `2019`
+
+Do not use 1955 for both fields.
+
+---
+
+# The Four Fields Together
+
+Use this mental model:
+
+### Canonical Publication Title
+
+**What is the work?**
+
+### Release Title
+
+**Which specific edition/version is this?**
+
+### First Published
+
+**When was the work originally published?**
+
+### Release Publication Year
+
+**When was this particular edition published?**
+
+---
+
+# Complete Example
+
+Suppose the book is originally published in 1980.
+
+A publisher releases a revised edition in 2022, and that 2022 edition is the e-book being uploaded.
+
+The metadata should conceptually be:
+
+```text
+Canonical Publication Title:
+Example Book
+
+First Published:
+1980
+
+Release Title:
+Example Book — Revised Edition
+
+Release Publication Year:
+2022
+```
+
+The Publication represents:
+
+> **Example Book, the underlying work**
+
+The Release represents:
+
+> **The 2022 revised edition of Example Book**
+
+---
+
+# Another Example: Different Publisher
+
+Original work:
+
+`Example Book`
+
+Originally published:
+
+`1975`
+
+Publisher A releases an edition in 1995.
+
+Publisher B releases another edition in 2010.
+
+Publisher C releases an e-book edition in 2024.
+
+If uploading Publisher C's 2024 e-book:
+
+```text
+Canonical Publication Title:
+Example Book
+
+First Published:
+1975
+
+Release Title:
+Example Book
+
+Release Publication Year:
+2024
+
+Publisher:
+Publisher C
+```
+
+The Publication does not become three separate Publications merely because there are three publishers.
+
+They are different **Releases of the same underlying Publication**, assuming they represent the same work.
+
+---
+
+# Another Example: Translation
+
+Suppose:
+
+* Original work: `Example Book`
+* Original publication year: `1960`
+* Translation published: `2020`
+* Uploaded file is the 2020 translated edition.
+
+Conceptually:
+
+```text
+Canonical Publication Title:
+Example Book
+
+First Published:
+1960
+
+Release Title:
+[title used by the translated edition]
+
+Release Publication Year:
+2020
+
+Translator:
+[actual translator]
+```
+
+The translator does not become part of the canonical title merely because the Release is translated.
+
+---
+
+# How the AI Should Decide
+
+When processing an e-book, ask these questions in order:
+
+### Question 1
+
+**What underlying work is this?**
+
+That determines:
+
+`Canonical Publication Title`
+
+and:
+
+`First Published`
+
+### Question 2
+
+**What exact edition/version of that work is represented by this file?**
+
+That determines:
+
+`Release Title`
+
+and:
+
+`Release Publication Year`
+
+### Question 3
+
+**Does the edition have information that differs from the underlying work?**
+
+Examples:
+
+* different publisher;
+* different ISBN;
+* different publication year;
+* translation;
+* revised edition;
+* special edition;
+* illustrated edition.
+
+Those differences belong to the **Release**, not automatically to the Publication.
+
+---
+
+# Critical Distinction
+
+Never reason like this:
+
+> "The file was published in 2024, therefore First Published = 2024."
+
+Instead reason:
+
+> "The underlying work was first published in 1987, while the specific edition represented by this e-book was published in 2024."
+
+Therefore:
+
+```text
+First Published = 1987
+Release Publication Year = 2024
+```
+
+Likewise, never reason:
+
+> "The edition is called 'Example Book: 25th Anniversary Edition,' therefore the Publication title should be that."
+
+Instead:
+
+```text
+Canonical Publication Title = Example Book
+Release Title = Example Book: 25th Anniversary Edition
+```
+
+---
+
+# Evidence Priority
+
+When determining these fields, prioritize evidence in this order:
+
+1. **The actual e-book's title/copyright/publication information**
+2. **Reliable bibliographic/catalogue information for that exact edition**
+3. **Reliable publisher information**
+4. **ISBN-specific bibliographic records**
+5. Other reliable reference sources
+
+Do not use a different edition's metadata simply because the title and author match.
+
+If the evidence does not allow the AI to confidently distinguish the original publication year from the Release publication year, **do not guess**. Flag the field for human review.
+
+---
+
+# One-Sentence Rules for the AI
+
+**Canonical Publication Title:** The stable title of the underlying work, independent of edition, publisher, format, or release.
+
+**Release Title:** The title identifying the particular edition/version of the underlying work represented by the uploaded e-book.
+
+**First Published:** The year the underlying work was originally first published.
+
+**Release Publication Year:** The year the particular edition/version represented by the uploaded e-book was published.
+
+**Golden rule:**
+**Publication = the work. Release = the edition. First Published = the work's original year. Release Publication Year = the edition's year.**
+
+

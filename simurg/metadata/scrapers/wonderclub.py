@@ -637,6 +637,7 @@ def _parse_page(html: str, url: str) -> dict | None:
         "authors": authors,
         "year": year,
         "publish_year": year,
+        "first_publish_year": year,
         "first_published": year,
         "publisher": publisher or None,
         "isbn": isbn,

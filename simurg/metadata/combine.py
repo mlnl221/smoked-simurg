@@ -80,10 +80,29 @@ def clean_isbn(isbn: str | None) -> str | None:
 
 
 def clean_tags(subjects) -> str:
-    """Join subjects to comma string lower dots per D18."""
+    """Join subjects to comma string lower dots per D18 / docs/ebook.txt §5."""
     if not subjects:
         return ""
-    # subjects may be list of strings
+    # Forbidden per docs/ebook.txt:308 — format/source + generic praise
+    _forbidden = {
+        "epub",
+        "pdf",
+        "mobi",
+        "azw3",
+        "djvu",
+        "scan",
+        "retail",
+        "ocr",
+        "convert",
+        "other",
+        "ebook",
+        "e-book",
+        "ebooks",
+        "bestseller",
+        "awesome",
+        "must.read",
+        "must-read",
+    }
     tags = []
     for s in subjects:
         if not s:
@@ -91,7 +110,7 @@ def clean_tags(subjects) -> str:
         t = str(s).strip().lower()
         t = re.sub(r"\s+", ".", t)
         t = re.sub(r"[^a-z0-9\.\-]", "", t)
-        if t and t not in {"epub", "pdf", "mobi", "scan", "retail", "azw3", "djvu"}:
+        if t and t not in _forbidden:
             # avoid forbidden tags - skip if exact match
             tags.append(t)
     # dedupe preserve order
@@ -105,47 +124,134 @@ def clean_tags(subjects) -> str:
 
 
 def strip_edition_from_canonical(title: str) -> str:
-    """Move edition wording to release title; keep canonical clean."""
+    """Move edition wording to release title; keep canonical clean per docs/ebook.txt §4.
+
+    Removes bracketed edition (…Edition…), colon/dash edition suffixes
+    (``: Illustrated Edition``, ``- Revised Edition``), and volume markers,
+    so canonical stays as the stable work title (e.g. ``Dune: 50th Anniversary
+    Edition`` -> ``Dune``). Release-specific wording belongs in remaster_title.
+    """
     if not title:
         return title
-    # Remove parenthetical edition
+    # 1) Parenthetical/bracketed edition e.g. "Dune (Illustrated Edition)"
     title = re.sub(
-        r"\s*[\(\[][^\)\]]*(illustrated|edition|volume|vol\.?|deluxe|annotated|revised)[^\)\]]*[\)\]]",
+        r"\s*[\(\[][^\)\]]*(illustrated|edition|volume|vol\.?|deluxe|annotated|revised|reissue|expanded|special|anniversary)[^\)\]]*[\)\]]",
         "",
         title,
         flags=re.IGNORECASE,
     )
+    # 2) Colon/dash edition suffix e.g. "Dune: 50th Anniversary Edition", "Dune - Revised Edition"
+    title = re.sub(
+        r"\s*[:\-–—]\s*(?:\d+(?:st|nd|rd|th)?\s+)?(?:illustrated|anniversary|revised|expanded|annotated|special|deluxe|reissue|collector'?s?).*?edition.*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    title = re.sub(
+        r"\s*[:\-–—]\s*(?:illustrated|anniversary|revised|expanded|annotated|special|deluxe|reissue).*edition.*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    # 3) Trailing " - Nth Edition" without colon but with edition keyword
+    title = re.sub(
+        r"\s+(?:\d+(?:st|nd|rd|th)?\s+)?(?:illustrated|anniversary|revised|expanded|annotated|special|deluxe).*\bedition\b.*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    title = re.sub(r"\s+", " ", title).strip(" -:–—").strip()
     title = re.sub(r"\s+", " ", title).strip()
     return title
 
 
 def detect_edition(title: str | None) -> str | None:
-    """Pull edition wording out of a title, e.g. '(Illustrated Edition)', 'Vol. 3'."""
+    """Pull edition wording out of a title, e.g. '(Illustrated Edition)', 'Dune: 50th Anniversary Edition', 'Vol. 3'."""
     if not title:
         return None
     m = re.search(
-        r"[\(\[]([^\)\]]*(?:illustrated|edition|annotated|revised|deluxe|reissue|expanded|special)[^\)\]]*)[\)\]]",
+        r"[\(\[]([^\)\]]*(?:illustrated|edition|annotated|revised|deluxe|reissue|expanded|special|anniversary)[^\)\]]*)[\)\]]",
         title,
         flags=re.IGNORECASE,
     )
     if m:
         return re.sub(r"\s+", " ", m.group(1)).strip()
-    m2 = re.search(r"\b(vol\.?\s*\d+|book\s*\d+|part\s*\d+)\b", title, flags=re.IGNORECASE)
+    # Colon/dash edition suffix
+    m2 = re.search(
+        r"[:\-–—]\s*((?:\d+(?:st|nd|rd|th)?\s+)?(?:illustrated|anniversary|revised|expanded|annotated|special|deluxe).*?edition.*$)",
+        title,
+        flags=re.IGNORECASE,
+    )
     if m2:
-        return m2.group(1)
+        return re.sub(r"\s+", " ", m2.group(1)).strip()
+    # Bare edition phrase without brackets
+    m3 = re.search(
+        r"\b((?:\d+(?:st|nd|rd|th)?\s+)?(?:illustrated|anniversary|revised|expanded|annotated|special|deluxe).*?\bedition\b.*$)",
+        title,
+        flags=re.IGNORECASE,
+    )
+    if m3:
+        return re.sub(r"\s+", " ", m3.group(1)).strip()
+    m4 = re.search(r"\b(vol\.?\s*\d+|book\s*\d+|part\s*\d+)\b", title, flags=re.IGNORECASE)
+    if m4:
+        return m4.group(1)
     return None
+
+
+def _normalize_language(lang: str | None) -> str | None:
+    """Normalize language string to tracker-expected form."""
+    if not lang:
+        return None
+    s = str(lang).strip()
+    if not s:
+        return None
+    # Map common codes to English display
+    low = s.lower()
+    if low in ("en", "eng", "english"):
+        return "English"
+    if low in ("tr", "tur", "turkish"):
+        return "Turkish"
+    if low in ("ja", "jpn", "japanese"):
+        return "Japanese"
+    # Title-case for others, e.g. "French" -> "French", "de" -> "German" unlikely
+    # Keep as-is title-cased for unknown languages rather than dropping
+    return s.title() if len(s) < 20 else s
+
+
+def _merge_contributors(inbuilt_vals, scraper_vals) -> list[str]:
+    """Merge inbuilt (file truth) + scraper contributors, file-first deduped."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for src in (inbuilt_vals, scraper_vals):
+        if not src:
+            continue
+        vals = src if isinstance(src, (list, tuple)) else [src]
+        for v in vals:
+            v = str(v).strip()
+            if not v or v.lower() in seen:
+                continue
+            seen.add(v.lower())
+            merged.append(v)
+    return merged
 
 
 def build_metadata(
     inbuilt: dict, scraper: dict | None, fmt: str, filepath: str | None = None
 ) -> dict:
-    """Build final metadata dict matching §2 fields."""
+    """Build final metadata dict matching §2 fields per docs/ebook.txt.
+
+    Four-field model (docs/ebook.txt:701):
+      Publication = work:  title (canonical), year (First Published)
+      Release     = edition: remaster_title, remaster_year
+    Scraper contract: year/publish_year = edition year, first_publish_year = work year.
+    File year (inbuilt.year) is always the Release year (edition), never Publication.
+    """
     scraper = scraper or {}
     # Authors
     authors = normalize_authors(inbuilt.get("authors") or scraper.get("authors") or [])
     if not authors and scraper.get("author"):
         authors = normalize_authors([scraper["author"]])
-    # Title handling
+    # Title handling — Publication vs Release per docs/ebook.txt §4
     inbuilt_title = (inbuilt.get("title") or "").strip()
     scraper_title = (scraper.get("title") or "").strip()
     # Prefer inbuilt title if present, else scraper
@@ -158,34 +264,66 @@ def build_metadata(
         )
     )
     canonical_title = strip_edition_from_canonical(base_title)
-    # Release title includes edition wording if inbuilt had it
+    # Release title includes edition wording if present anywhere
     release_title = base_title
-    if canonical_title.lower() != base_title.lower():
-        # Keep original as release title (with edition)
-        release_title = base_title
-    else:
-        # If scraper has edition, use that?
+    # If inbuilt carried an explicit edition field, ensure release title reflects it
+    inbuilt_edition = (inbuilt.get("edition") or "").strip()
+    if inbuilt_edition and inbuilt_edition.lower() not in release_title.lower():
+        # Append edition parenthetically if release title doesn't already contain it
+        if not detect_edition(release_title):
+            release_title = f"{release_title} ({inbuilt_edition})"
+    # If canonical was stripped, keep original base as release (already done);
+    # otherwise try scraper edition hint
+    if canonical_title.lower() == base_title.lower():
+        scraper_edition = scraper.get("edition") or detect_edition(scraper_title)
+        if scraper_edition and scraper_edition.lower() not in release_title.lower():
+            if not detect_edition(release_title):
+                release_title = f"{release_title} ({scraper_edition})"
+    elif canonical_title.lower() != base_title.lower():
         release_title = base_title
 
-    # Year handling - prefer inbuilt year from file (accurate for the edition),
-    # fall back to scraper. Scraper first_publish_year can be wrong (e.g. OpenLibrary).
+    # Year handling per docs/ebook.txt:12,150,178,234
+    # Publication = work original year (First Published) — NEVER file year.
+    # Release     = edition year (file/scraper edition).
     inbuilt_year = inbuilt.get("year")
-    scraper_year = scraper.get("year") or scraper.get("first_publish_year")
-    year = inbuilt_year or scraper_year
-    release_year = inbuilt_year or scraper.get("publish_year") or scraper_year or year
-    first_published = year
-
-    # Publisher
-    publisher = scraper.get("publisher") or inbuilt.get("publisher") or "Unknown Publisher"
-    # ISBN
-    isbn = clean_isbn(inbuilt.get("isbn") or scraper.get("isbn"))
-    # Language hardcoded English per C12
-    language = "English"
-    # Page count: prefer the file-derived count (PDF exact; EPUB/MOBI estimated),
-    # falling back to the scraper's print-edition number when the file has none.
-    page_count = (
-        scraper.get("page_count") or scraper.get("number_of_pages") or inbuilt.get("page_count")
+    # scraper work year (Publication) — only first_publish_year / first_published
+    scraper_work_year = (
+        scraper.get("first_publish_year")
+        or scraper.get("first_published")
+        or scraper.get("original_year")
     )
+    # scraper edition year (Release)
+    scraper_edition_year = scraper.get("publish_year") or scraper.get("year")
+    # First Published (Publication) — work year only, never guess from edition
+    first_published = scraper_work_year
+    # Fall back: if no work year but edition year exists and inbuilt also has same year,
+    # leave as None to force human review rather than silently duplicating edition year.
+    # Only copy edition year to work year as last resort when explicitly no other source
+    # is available and the value is not just the file year duplication (avoid false 2021).
+    # For MVP we leave first_published None if only edition year exists — validate will flag.
+
+    # Release year (edition) — prefer file truth, then scraper edition
+    release_year = inbuilt_year or scraper_edition_year
+
+    # Publisher — file is edition truth per docs/ebook.txt:372 (evidence priority: file > catalogue)
+    publisher = inbuilt.get("publisher") or scraper.get("publisher") or "Unknown Publisher"
+    # ISBN — edition-specific per docs/ebook.txt:391, prefer file
+    isbn = clean_isbn(inbuilt.get("isbn") or scraper.get("isbn"))
+    # Language — actual file language per docs/ebook.txt:354, scraper fallback, then English
+    raw_lang = inbuilt.get("language") or scraper.get("language")
+    language = _normalize_language(raw_lang) or "English"
+    # Page count — Release-level per docs/ebook.txt:405
+    # PDF len(pages) is exact; for EPUB/MOBI file is estimate (250wpp) vs scraper print count.
+    # Prefer file for PDF, scraper for reflowable; fallback to whichever exists.
+    fmt_upper = fmt.upper()
+    if fmt_upper == "PDF":
+        page_count = (
+            inbuilt.get("page_count") or scraper.get("page_count") or scraper.get("number_of_pages")
+        )
+    else:
+        page_count = (
+            scraper.get("page_count") or scraper.get("number_of_pages") or inbuilt.get("page_count")
+        )
     if page_count:
         try:
             page_count = int(page_count)
@@ -241,10 +379,10 @@ def build_metadata(
         # Also ensure we have at least 10 chars for tracker
         if len(synopsis) < 10:
             synopsis = "No synopsis available. " + synopsis
-    # Translators, editors, illustrators
-    translators = scraper.get("translators") or []
-    editors = scraper.get("editors") or []
-    illustrators = scraper.get("illustrators") or []
+    # Translators, editors, illustrators — Release-level per docs/ebook.txt §3, merge file truth + scraper
+    translators = _merge_contributors(inbuilt.get("translators"), scraper.get("translators"))
+    editors = _merge_contributors(inbuilt.get("editors"), scraper.get("editors"))
+    illustrators = _merge_contributors(inbuilt.get("illustrators"), scraper.get("illustrators"))
 
     # Source placeholder - to be prompted later; default Retail if undetermined?
     # Keep None to prompt
@@ -253,6 +391,11 @@ def build_metadata(
     # Cover - prefer inbuilt cover_path, else scraper cover_url
     cover_path = inbuilt.get("cover_path")
     cover_url_scraper = scraper.get("cover_url")
+
+    # Edition for release notes / display
+    edition_val = (
+        inbuilt_edition or detect_edition(release_title) or detect_edition(base_title) or ""
+    )
 
     result = {
         "title": canonical_title,
@@ -273,6 +416,7 @@ def build_metadata(
         "source": source,
         "release_notes": "",
         "release_desc": "",
+        "edition": edition_val,
         "type": "E-Book",
         "cover_path": cover_path,
         "cover_url_scraper": cover_url_scraper,
@@ -283,7 +427,7 @@ def build_metadata(
 
 
 def validate_metadata(md: dict) -> list[str]:
-    """Return list of missing required field names."""
+    """Return list of missing required field names per docs/ebook.txt §13."""
     required = ["title", "authors", "year", "publisher", "format", "source"]
     missing = []
     for f in required:
@@ -306,6 +450,19 @@ def validate_metadata(md: dict) -> list[str]:
             except Exception:
                 if f not in missing:
                     missing.append(f)
+        if f == "remaster_year" or f == "year":
+            # Also validate remaster_year bounds when present
+            rv = md.get("remaster_year")
+            if rv is not None:
+                try:
+                    riv = int(rv) if not isinstance(rv, int) else rv
+                    if riv < 1000 or riv > 2100:
+                        if "remaster_year" not in missing:
+                            missing.append("remaster_year")
+                except Exception:
+                    if "remaster_year" not in missing:
+                        missing.append("remaster_year")
+    # Publication year (year) missing is strict per docs/ebook.txt:1200 — flag for human review
     # Tags optional? Plan says required yes, but we allow empty and prompt?
     # We'll treat tags as optional for validation but warn
     return missing

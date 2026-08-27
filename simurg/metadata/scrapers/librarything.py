@@ -269,6 +269,7 @@ def _build_ebook_result(talpa_hit: dict, ck: dict, source: str = "librarything")
         "authors": authors,
         "year": pub_year,
         "publish_year": pub_year,
+        "first_publish_year": pub_year,
         "publisher": None,
         "isbn": isbn,
         "page_count": None,

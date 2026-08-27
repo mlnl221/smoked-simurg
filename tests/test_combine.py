@@ -76,11 +76,18 @@ def test_build_metadata_prefers_inbuilt():
         "publisher": "Pub",
         "isbn": "9780134092675",
     }
-    scraper = {"title": "Scraper Title", "authors": ["B"], "year": 1999, "publisher": "Other"}
+    scraper = {
+        "title": "Scraper Title",
+        "authors": ["B"],
+        "year": 1999,
+        "first_publish_year": 1999,
+        "publisher": "Other",
+    }
     md = build_metadata(inbuilt, scraper, "epub")
     assert md["title"] == "Inbuilt Title"
     assert md["authors"] == ["A"]
-    assert md["publisher"] == "Other"  # scraper publisher wins per C9
+    # Publisher: file truth wins per docs/ebook.txt:372 (edition publisher)
+    assert md["publisher"] == "Pub"
     assert md["format"] == "EPUB"
     assert md["language"] == "English"
 
@@ -92,11 +99,16 @@ def test_build_metadata_fallback_filepath():
 
 
 def test_build_metadata_page_count_prefers_scraper():
-    # The scraper's page count now takes priority over the file-derived count.
-    inbuilt = {"page_count": 100, "year": 2020}
-    scraper = {"page_count": 250}
-    md = build_metadata(inbuilt, scraper, "pdf")
-    assert md["page_count"] == 250
+    # For EPUB (reflowable estimate) scraper wins; for PDF file wins (exact).
+    # EPUB: scraper print count preferred over 250wpp estimate.
+    inbuilt_epub = {"page_count": 100, "year": 2020}
+    scraper = {"page_count": 250, "first_publish_year": 2020}
+    md_epub = build_metadata(inbuilt_epub, scraper, "epub")
+    assert md_epub["page_count"] == 250
+    # PDF: file len(pages) is exact, so file wins.
+    inbuilt_pdf = {"page_count": 100}
+    md_pdf = build_metadata(inbuilt_pdf, scraper, "pdf")
+    assert md_pdf["page_count"] == 100
 
 
 def test_build_metadata_page_count_falls_back_to_scraper():

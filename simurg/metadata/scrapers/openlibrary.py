@@ -27,19 +27,32 @@ class OpenLibraryScraper(BaseScraper):
                 entry = data.get(f"ISBN:{cleaned}")
                 if entry:
                     return self._parse_entry(entry, cleaned)
-            # fallback search.json
+            # fallback search.json — docs carry *work*-level first_publish_year
             url2 = "https://openlibrary.org/search.json"
             r2 = self.session.get(url2, params={"isbn": cleaned}, timeout=10)
             if r2.status_code == 200:
                 docs = r2.json().get("docs", [])
                 if docs:
                     d = docs[0]
+                    # Edition year not reliably available here; use first_publish_year
+                    # as Publication-level field only (see docs/ebook.txt §3 / §4).
+                    fpy = d.get("first_publish_year")
+                    # Try edition year from publish_year array if present, else None
+                    pub_y = None
+                    if d.get("publish_year"):
+                        try:
+                            py_list = d.get("publish_year") or []
+                            if py_list:
+                                pub_y = int(py_list[0])
+                        except Exception:
+                            pub_y = None
                     return {
                         "title": d.get("title"),
                         "authors": d.get("author_name", []),
                         "publisher": (d.get("publisher") or [None])[0],
-                        "year": d.get("first_publish_year"),
-                        "publish_year": d.get("first_publish_year"),
+                        "year": pub_y,
+                        "publish_year": pub_y,
+                        "first_publish_year": fpy,
                         "page_count": d.get("number_of_pages_median"),
                         "isbn": cleaned,
                         "language": (d.get("language") or [None])[0],
@@ -68,12 +81,22 @@ class OpenLibraryScraper(BaseScraper):
                     d = docs[0]
                     isbn = (d.get("isbn") or [None])[0]
                     cleaned = re.sub(r"[^0-9Xx]", "", isbn) if isbn else None
+                    fpy = d.get("first_publish_year")
+                    pub_y = None
+                    if d.get("publish_year"):
+                        try:
+                            py_list = d.get("publish_year") or []
+                            if py_list:
+                                pub_y = int(py_list[0])
+                        except Exception:
+                            pub_y = None
                     return {
                         "title": d.get("title"),
                         "authors": d.get("author_name", []),
                         "publisher": (d.get("publisher") or [None])[0],
-                        "year": d.get("first_publish_year"),
-                        "publish_year": d.get("first_publish_year"),
+                        "year": pub_y,
+                        "publish_year": pub_y,
+                        "first_publish_year": fpy,
                         "page_count": d.get("number_of_pages_median"),
                         "isbn": cleaned,
                         "language": (d.get("language") or [None])[0],
@@ -161,6 +184,7 @@ class OpenLibraryScraper(BaseScraper):
             "publisher": publisher,
             "year": year,
             "publish_year": year,
+            "first_publish_year": None,
             "page_count": entry.get("number_of_pages"),
             "isbn": isbn,
             "language": None,
@@ -275,6 +299,7 @@ class OpenLibraryScraper(BaseScraper):
             "publisher": publisher,
             "year": year,
             "publish_year": year,
+            "first_publish_year": None,
             "page_count": page_count,
             "isbn": isbn,
             "language": None,

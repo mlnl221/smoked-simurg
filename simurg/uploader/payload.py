@@ -200,13 +200,14 @@ def compile_data_new_publication(
         # ISBN maps to Gazelle's legacy "catalogue_number" field (label says "ISBN:")
         "catalogue_number": metadata.get("isbn") or metadata.get("catalogue_number") or "",
         "page_count": str(metadata.get("page_count") or ""),
-        # Canonical synopsis -> book_desc; release notes -> album_desc
+        # Canonical synopsis (Publication-level, docs/ebook.txt §8) -> book_desc
+        # Release notes (Release-level, docs/ebook.txt §9) -> album_desc
         "book_desc": metadata.get("album_desc")
         or metadata.get("book_desc")
         or metadata.get("synopsis")
         or metadata.get("description")
         or "",
-        "album_desc": metadata.get("release_notes") or metadata.get("album_desc") or "",
+        "album_desc": metadata.get("release_notes") or "",
         "release_desc": metadata.get("release_desc") or "",
         "format": metadata.get("format", "MOBI"),
         # Source (Retail/Scan/OCR/Convert/Other) maps to legacy "bitrate" field
