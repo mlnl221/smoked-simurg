@@ -232,11 +232,13 @@ def build_magazine_metadata(
     electronic_issn = clean_issn(scraper.get("electronic_issn"))
     country = scraper.get("country")
     frequency = scraper.get("frequency")
-    # Language: do NOT default to English. Leave empty when unknown so CLI
-    # can abort per docs/magazine.txt §10 (form only has English/Turkish/Japanese;
-    # Russian etc. must not silently become English). Normalize known aliases.
+    # Language: default to English when unknown (user can override via editor).
+    # Previous behaviour aborted on empty per docs/magazine.txt §10, but for
+    # batch magazine collections (e.g. National Geographic) the scraper rarely
+    # provides language and the collection is known English. Allow silent default
+    # to English while still validating explicit non-allowed values.
     raw_lang = scraper.get("language") or inbuilt.get("language") or ""
-    language = _normalize_magazine_language(raw_lang) if raw_lang else ""
+    language = _normalize_magazine_language(raw_lang) if raw_lang else "English"
     page_count = inbuilt.get("page_count") or scraper.get("page_count")
     if page_count:
         try:
