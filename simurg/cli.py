@@ -681,15 +681,16 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
       python -m simurg up ./mags --category magazines --no-review
     """
     dir_path = Path(directory)
-    # Validate directory
+    # Validate directory — support nested batches (e.g. books/National Geographic - 2000/*.pdf)
     files_all = list(dir_path.iterdir())
     subdirs = [p for p in files_all if p.is_dir()]
     if subdirs:
         click.secho(
-            f"Warning: subdirectories found (MVP top-level only, ignoring): {[s.name for s in subdirs]}",
-            fg="yellow",
+            f"Found subdirectories: {[s.name for s in subdirs]} — scanning recursively",
+            fg="cyan",
         )
-    files = [p for p in files_all if p.is_file()]
+    # Recursively collect all files (covers both top-level batches and year-subfolders)
+    files = [p for p in dir_path.rglob("*") if p.is_file()]
 
     is_mag = category == "magazines"
     allowed = MAGAZINE_EXTENSIONS if is_mag else ALLOWED_EXTENSIONS
