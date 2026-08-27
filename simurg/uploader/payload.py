@@ -318,6 +318,17 @@ def compile_data_new_magazine(
         # Source (Retail/Scan/OCR/Convert/Other) -> legacy "bitrate" field
         "bitrate": metadata.get("source") or "Other",
     }
+    # Pack coverage fields — required by Simurg for non-individual magazine releases
+    # (docs/rules.txt:131). Maps to the [data-magazine-pack] form section.
+    if (metadata.get("release_type") or "Individual Issue") != "Individual Issue":
+        data["magazine_coverage_start"] = metadata.get("pack_coverage_start") or ""
+        data["magazine_coverage_end"] = metadata.get("pack_coverage_end") or ""
+        data["magazine_issue_count"] = str(
+            metadata.get("pack_issue_count") or metadata.get("pack_available") or ""
+        )
+        data["magazine_issue_manifest"] = metadata.get("pack_issue_manifest") or ""
+        if metadata.get("pack_is_complete"):
+            data["magazine_is_complete"] = "1"
     # Magazines have no author/illustrator roles on the form - do not send artists[].
     if request_id:
         data["requestid"] = str(request_id)
@@ -363,6 +374,16 @@ def compile_data_existing_magazine(
         "language": metadata.get("language", "English"),
         "book_desc": _ensure_magazine_synopsis(metadata),
     }
+    # Pack coverage fields for non-individual releases (see compile_data_new_magazine).
+    if (metadata.get("release_type") or "Individual Issue") != "Individual Issue":
+        data["magazine_coverage_start"] = metadata.get("pack_coverage_start") or ""
+        data["magazine_coverage_end"] = metadata.get("pack_coverage_end") or ""
+        data["magazine_issue_count"] = str(
+            metadata.get("pack_issue_count") or metadata.get("pack_available") or ""
+        )
+        data["magazine_issue_manifest"] = metadata.get("pack_issue_manifest") or ""
+        if metadata.get("pack_is_complete"):
+            data["magazine_is_complete"] = "1"
     if request_id:
         data["requestid"] = str(request_id)
     return data

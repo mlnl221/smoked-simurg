@@ -51,6 +51,17 @@ MAGAZINE_EDITABLE = [
     "album_desc",
 ]
 
+# Pack-only fields (Year/Decade/Complete Run/Custom Range). These are derived from
+# the included files but the user must be able to correct them (e.g. mark a pack
+# complete when the missing issues simply don't exist). Surfaced in the editor when
+# `release_type` is not "Individual Issue" (see review_metadata).
+PACK_EDITABLE = [
+    "pack_coverage_start",
+    "pack_coverage_end",
+    "pack_issue_count",
+    "pack_is_complete",
+]
+
 
 def _resolve_editor() -> str:
     """Mirror salmon: ``cfg.upload.default_editor`` -> $EDITOR -> nano."""
@@ -66,7 +77,7 @@ def _resolve_editor() -> str:
     return os.environ.get("EDITOR") or "nano"
 
 
-def _print_metadata(metadata: dict, is_mag: bool) -> None:
+def _print_metadata(metadata: dict, is_mag: bool, editable: list[str] | None = None) -> None:
     click.secho("\nCurrent metadata:", fg="cyan", bold=True)
     # Show every editable field (including optional ones) so missing values are
     # visible and can be revised. Cover image is handled separately, so it is
@@ -78,11 +89,19 @@ def _print_metadata(metadata: dict, is_mag: bool) -> None:
     # (see `simurg/uploader/payload.py:15` and `simurg/metadata/combine.py:240`).
     # Display them as `description` / `release_notes` so users are not confused.
     if is_mag:
-        display_labels = {"book_desc": "description", "album_desc": "release_notes"}
+        display_labels = {
+            "book_desc": "description",
+            "album_desc": "release_notes",
+            "pack_coverage_start": "coverage_start",
+            "pack_coverage_end": "coverage_end",
+            "pack_issue_count": "issue_count",
+            "pack_is_complete": "is_complete",
+        }
     else:
         display_labels = {"album_desc": "description"}
-    keys = MAGAZINE_EDITABLE if is_mag else EBOOK_EDITABLE
-    for k in keys:
+    if editable is None:
+        editable = MAGAZINE_EDITABLE if is_mag else EBOOK_EDITABLE
+    for k in editable:
         v = metadata.get(k)
         if v is None or v == "" or v == []:
             display = click.style("(empty)", fg="yellow", dim=True)
@@ -198,6 +217,9 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
 
     editor = _resolve_editor()
     editable = MAGAZINE_EDITABLE if is_mag else EBOOK_EDITABLE
+    is_pack = is_mag and (metadata.get("release_type") or "Individual Issue") != "Individual Issue"
+    if is_pack:
+        editable = MAGAZINE_EDITABLE + PACK_EDITABLE
 
     if is_mag:
         edit_functions = {
@@ -220,11 +242,23 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "rn": lambda: _edit_scalar(metadata, "album_desc", editor),
             "*": lambda: _edit_all_json(metadata, editable, editor),
         }
+        if is_pack:
+            edit_functions.update(
+                {
+                    "cs": lambda: _edit_scalar(metadata, "pack_coverage_start", editor),
+                    "ce": lambda: _edit_scalar(metadata, "pack_coverage_end", editor),
+                    "cn": lambda: _edit_scalar(metadata, "pack_issue_count", editor, is_int=True),
+                    "cp": lambda: _edit_scalar(metadata, "pack_is_complete", editor, is_int=True),
+                }
+            )
         menu = (
             "\nRevise metadata? [t]itle [r]elease title [y]ear [oy]riginal year [v]olume [i]ssue "
-            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]requency [pg]pages [l]anguage "
-            "[rt]release type [g]enres/tags [d]escription [rn]release notes [*]edit ALL (JSON) [n]othing"
+            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]frequency [pg]ages [l]anguage "
+            "[rt]release type [g]enres/tags [d]escription [rn]release notes"
         )
+        if is_pack:
+            menu += " [cs]coverage start [ce]coverage end [cn]issue count [cp]is complete(1/0)"
+        menu += " [*]edit ALL (JSON) [n]othing"
     else:
         edit_functions = {
             "t": lambda: _edit_scalar(metadata, "title", editor),
@@ -247,7 +281,7 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
         )
 
     while True:
-        _print_metadata(metadata, is_mag)
+        _print_metadata(metadata, is_mag, editable)
         ans = (
             click.prompt(click.style(menu, fg="magenta"), default="n", show_default=False)
             .strip()

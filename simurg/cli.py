@@ -204,6 +204,157 @@ def _group_detection(files: list[Path]):
     return dups
 
 
+def _detect_magazine_year_packs(files: list[Path]) -> dict:
+    """Group magazine files by (canonical_lower, year) for Year Pack detection.
+
+    Returns dict with key (canonical_lower, year) -> list[Path] sorted.
+    Only groups with >=2 files are considered pack candidates.
+    """
+    from collections import defaultdict
+
+    from simurg.metadata.magazine import decode_magazine_filename
+
+    groups: dict[tuple[str, int], list[Path]] = defaultdict(list)
+    for fp in files:
+        try:
+            meta = decode_magazine_filename(fp)
+        except Exception:
+            continue
+        canonical = (meta.get("canonical_title") or fp.stem).strip().lower()
+        year = meta.get("year")
+        if year is None:
+            continue
+        try:
+            yint = int(year)
+        except Exception:
+            continue
+        groups[(canonical, yint)].append(fp)
+    # Filter to packs with at least 2 files, sort each pack by issue date/name
+    result: dict[tuple[str, int], list[Path]] = {}
+    for k, flist in groups.items():
+        if len(flist) >= 2:
+            # Sort by issue_date if available else name
+            def _sort_key(p: Path):
+                try:
+                    m = decode_magazine_filename(p)
+                    return (m.get("issue_date") or "", p.name.lower())
+                except Exception:
+                    return ("", p.name.lower())
+
+            result[k] = sorted(flist, key=_sort_key)
+    return result
+
+
+def _detect_magazine_decade_packs(files: list[Path]) -> dict:
+    """Group magazine files by (canonical_lower, decade_start) for Decade Pack detection.
+
+    Decade packs are 10-year spans: 2000-2009, etc. Only groups with >=4 files
+    (heuristic) are considered, to avoid noisy single-year decades.
+    """
+    from collections import defaultdict
+
+    from simurg.metadata.magazine import decode_magazine_filename
+
+    groups: dict[tuple[str, int], list[Path]] = defaultdict(list)
+    for fp in files:
+        try:
+            meta = decode_magazine_filename(fp)
+        except Exception:
+            continue
+        canonical = (meta.get("canonical_title") or fp.stem).strip().lower()
+        year = meta.get("year")
+        if year is None:
+            continue
+        try:
+            yint = int(year)
+        except Exception:
+            continue
+        decade = (yint // 10) * 10
+        groups[(canonical, decade)].append(fp)
+    result: dict[tuple[str, int], list[Path]] = {}
+    for k, flist in groups.items():
+        if len(flist) >= 4:  # at least 4 issues to be a decade pack
+
+            def _sort_key(p: Path):
+                try:
+                    m = decode_magazine_filename(p)
+                    return (m.get("issue_date") or "", p.name.lower())
+                except Exception:
+                    return ("", p.name.lower())
+
+            result[k] = sorted(flist, key=_sort_key)
+    return result
+
+
+def _prompt_magazine_collection_mode(
+    year_packs: dict, decade_packs: dict, total_files: int, dry_run: bool = False
+) -> str:
+    """Prompt user to choose Year Pack / Decade Pack / Individual.
+
+    Returns "year", "decade", "individual", or "abort".
+    Auto-prompts when any subdirectory is detected (Year/Decade detection).
+    In non-interactive dry-run without input, defaults to Individual for safety.
+    """
+    # Summarize packs
+    click.secho(
+        f"\nDetected {len(year_packs)} yearly collection(s) and {len(decade_packs)} decade collection(s)",
+        fg="cyan",
+        bold=True,
+    )
+    for (canonical, year), flist in sorted(year_packs.items()):
+        # Use canonical from first file's title part if available
+        try:
+            from simurg.metadata.magazine import decode_magazine_filename
+
+            canon_display = decode_magazine_filename(flist[0]).get("canonical_title") or canonical
+        except Exception:
+            canon_display = canonical
+        click.echo(f"  Year {year}: {len(flist)} issue(s) — {canon_display}")
+    for (canonical, decade), flist in sorted(decade_packs.items()):
+        try:
+            from simurg.metadata.magazine import decode_magazine_filename
+
+            canon_display = decode_magazine_filename(flist[0]).get("canonical_title") or canonical
+        except Exception:
+            canon_display = canonical
+        click.echo(f"  Decade {decade}-{decade + 9}: {len(flist)} issue(s) — {canon_display}")
+
+    click.echo(f"  Total files: {total_files}")
+    click.echo(
+        "  [Y] Year Pack — one torrent per year (e.g. '1995 Complete Year' or '1995 (10/12)')"
+    )
+    click.echo("  [D] Decade Pack — one torrent per decade (e.g. '2000-2009 Complete Decade')")
+    click.echo("  [I] Individual Issues — one torrent per file")
+    click.echo("  [A] Abort")
+    while True:
+        try:
+            ans = (
+                click.prompt(
+                    "Upload as collections?",
+                    type=str,
+                    default="i",
+                    show_default=False,
+                )
+                .strip()
+                .lower()
+            )
+        except (click.Abort, EOFError):
+            # In dry-run / non-interactive (e.g. no TTY, no input), default to individual
+            # to avoid aborting the batch. Interactive abort is still explicit via "a".
+            if dry_run:
+                return "individual"
+            return "abort"
+        if ans in ("y", "year", "year pack"):
+            return "year"
+        if ans in ("d", "decade", "decade pack"):
+            return "decade"
+        if ans in ("i", "individual", "issue", "issues"):
+            return "individual"
+        if ans in ("a", "abort"):
+            return "abort"
+        click.secho("Invalid choice — pick Y, D, I or A.", fg="yellow")
+
+
 def _format_scraper_result(res: dict, idx: int) -> str:
     """One-line summary of a scraper result for the pick prompt, with its URL."""
     scraper = str(res.get("_scraper") or "?").ljust(12)
@@ -660,9 +811,25 @@ def cli():
 )
 @click.option(
     "--source",
-    type=click.Choice(sorted(SOURCE_LABELS)),
+    type=click.Choice(sorted(SOURCE_LABELS), case_sensitive=False),
     default=None,
-    help="Source label (Retail/Scan/OCR/Convert/Other). Never guessed; defaults to Other when unset.",
+    help="Source label (Retail/Scan/OCR/Convert/Other). Overwrites scraped value. Never guessed; defaults to Other when unset.",
+)
+@click.option(
+    "--format",
+    "format_",
+    type=click.Choice(
+        sorted(set(FORMAT_MAP.values()) | set(MAGAZINE_FORMAT_MAP.values())),
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Override format (ebooks: PDF/EPUB/MOBI/AZW3/DJVU; magazines: PDF/CBR/CBZ/DJVU). Overwrites scraped/file value.",
+)
+@click.option(
+    "--language",
+    type=click.Choice(["English", "Japanese", "Turkish"], case_sensitive=False),
+    default=None,
+    help="Override language (English/Japanese/Turkish). Overwrites scraped/file value.",
 )
 @click.option(
     "--url",
@@ -670,7 +837,19 @@ def cli():
     default=None,
     help="Paste a book-page URL (openlibrary/googlebooks/bookbrainz/abebooks/archive.org/loc) to scrape metadata from directly, skipping the auto scraper search.",
 )
-def up(directory, dry_run, group_id, cover, no_rename, category, source, no_review, url):
+def up(
+    directory,
+    dry_run,
+    group_id,
+    cover,
+    no_rename,
+    category,
+    source,
+    format_,
+    language,
+    no_review,
+    url,
+):
     """Batch upload N unrelated files -> N torrents (ebooks or magazines).
 
     Examples:
@@ -695,6 +874,20 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
     is_mag = category == "magazines"
     allowed = MAGAZINE_EXTENSIONS if is_mag else ALLOWED_EXTENSIONS
     format_map = MAGAZINE_FORMAT_MAP if is_mag else FORMAT_MAP
+
+    # Explicit CLI overrides: normalize and validate per category (overwrite scraped)
+    fmt_override = format_.upper() if format_ else None
+    if fmt_override:
+        allowed_formats = set(MAGAZINE_FORMAT_MAP.values()) if is_mag else set(FORMAT_MAP.values())
+        if fmt_override not in allowed_formats:
+            kind = "magazines (PDF/CBR/CBZ/DJVU)" if is_mag else "ebooks (PDF/EPUB/MOBI/AZW3/DJVU)"
+            click.secho(f"{FAIL_SYMBOL} --format {fmt_override} not allowed for {kind}", fg="red")
+            raise click.Abort()
+    lang_override = None
+    if language:
+        _lang_map = {"english": "English", "japanese": "Japanese", "turkish": "Turkish"}
+        lang_override = _lang_map.get(language.lower(), language)
+    source_override = source  # Choice already canonical; None if not set
 
     # Filter allowed
     ebook_files = []
@@ -839,6 +1032,422 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
         pass
     os.makedirs(dottorrents_dir, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # Magazine Year/Decade Pack handling (auto-prompt when subdirectories)
+    # per docs/rules.txt:129 and user request: "1995 Complete Year" etc.
+    # ------------------------------------------------------------------
+    if is_mag and subdirs:
+        year_packs = _detect_magazine_year_packs(ebook_files)
+        decade_packs = _detect_magazine_decade_packs(ebook_files)
+        if year_packs or decade_packs:
+            # Auto-prompt when any subdirectory is detected
+            try:
+                pack_choice = _prompt_magazine_collection_mode(
+                    year_packs, decade_packs, len(ebook_files), dry_run=dry_run
+                )
+            except click.Abort:
+                raise
+            if pack_choice == "abort":
+                raise click.Abort()
+            if pack_choice in ("year", "decade"):
+                packs = year_packs if pack_choice == "year" else decade_packs
+                pack_type = "Year Pack" if pack_choice == "year" else "Decade Pack"
+                click.secho(
+                    f"\nProcessing {len(packs)} {pack_type}(s) from {len(ebook_files)} issue(s)...",
+                    fg="cyan",
+                    bold=True,
+                )
+                # Process each pack as one torrent (multi-file directory)
+                for pack_idx, ((_, pack_key), pack_files) in enumerate(sorted(packs.items())):
+                    if pack_idx > 0 and not dry_run:
+                        _rate_limit_wait(15, label=f"(pack {pack_idx + 1}/{len(packs)})")
+                    # Canonical display from first file
+                    from simurg.metadata.magazine import decode_magazine_filename
+                    from simurg.metadata.scrapers.util import issue_label as _issue_label_util
+
+                    first_meta = decode_magazine_filename(pack_files[0])
+                    canonical_display = (
+                        first_meta.get("canonical_title")
+                        or first_meta.get("title")
+                        or pack_files[0].stem
+                    ).strip()
+                    # Determine uniform format (CLI --format overwrites file-derived)
+                    if fmt_override:
+                        fmt = fmt_override
+                    else:
+                        fmts = set()
+                        for fp in pack_files:
+                            try:
+                                fm = (
+                                    decode_magazine_filename(fp).get("format")
+                                    or fp.suffix.lstrip(".").upper()
+                                )
+                            except Exception:
+                                fm = fp.suffix.lstrip(".").upper()
+                            fmts.add(fm.upper())
+                        if len(fmts) > 1:
+                            click.secho(
+                                f"{FAIL_SYMBOL} Skipping pack {canonical_display} {pack_key}: mixed formats {fmts} (docs/rules.txt:127)",
+                                fg="red",
+                            )
+                            skipped += 1
+                            continue
+                        fmt = next(iter(fmts)) if fmts else "PDF"
+
+                    # Collect per-file infos for manifest (pages + issue label)
+                    file_infos: list[tuple[Path, int | None, str]] = []
+                    for fp in sorted(pack_files, key=lambda p: p.name.lower()):
+                        try:
+                            _fm = _decode_inbuilt_quick(fp)
+                            pages = _fm.get("page_count")
+                        except Exception:
+                            pages = None
+                        try:
+                            m = decode_magazine_filename(fp)
+                            label = _issue_label_util(
+                                m.get("issue_date"),
+                                m.get("issue_date_precision"),
+                                m.get("volume"),
+                                m.get("issue_number"),
+                            )
+                            if not label:
+                                label = fp.stem
+                        except Exception:
+                            label = fp.stem
+                        file_infos.append((fp, pages, label))
+
+                    # Enrich Publication-level metadata via scrapers (once per pack)
+                    scraper_data: dict = {}
+                    if url:
+                        scraper_data = (
+                            _scrape_from_url(
+                                url, {"canonical_title": canonical_display}, dry_run=dry_run
+                            )
+                            or {}
+                        )
+                    if not scraper_data:
+                        try:
+                            from simurg.metadata.enricher import (
+                                rank_results,
+                                search_magazine_scrapers,
+                            )
+
+                            # Fake inbuilt for pack-level search (canonical only)
+                            fake_inbuilt = {
+                                "canonical_title": canonical_display,
+                                "title": canonical_display,
+                            }
+                            results = search_magazine_scrapers(fake_inbuilt)
+                            if results:
+                                scraper_data = rank_results(results) or {}
+                        except Exception as e:
+                            click.secho(
+                                f"Pack scraper failed for {canonical_display} {pack_key}: {e}",
+                                fg="yellow",
+                            )
+                            scraper_data = {}
+
+                    # Build pack metadata (manifest in album_desc per docs/rules.txt:131)
+                    from simurg.metadata.magazine import build_magazine_pack_metadata
+
+                    try:
+                        metadata = build_magazine_pack_metadata(
+                            canonical=canonical_display,
+                            pack_type=pack_type,
+                            pack_key=int(pack_key),
+                            files=pack_files,
+                            scraper=scraper_data,
+                            fmt=fmt,
+                            source=source_override,
+                            file_infos=file_infos,
+                        )
+                    except Exception as e:
+                        click.secho(
+                            f"Failed to build pack metadata for {canonical_display} {pack_key}: {e}",
+                            fg="red",
+                        )
+                        failed += 1
+                        continue
+
+                    # CLI overwrites (before review so user sees final values)
+                    if source_override is not None:
+                        metadata["source"] = source_override
+                    if fmt_override:
+                        metadata["format"] = fmt_override
+                    if lang_override:
+                        metadata["language"] = lang_override
+
+                    # [review] Interactive metadata review for packs (user request): let the
+                    # user correct Publication / release / coverage metadata before upload,
+                    # even for Year/Decade packs. Mirrors the individual-issue review
+                    # (cli.py:2106). review_metadata itself also guards non-TTY / dry-run.
+                    if not no_review:
+                        try:
+                            from simurg.metadata.review import review_metadata
+
+                            metadata = review_metadata(metadata, is_mag=True, dry_run=dry_run)
+                        except click.Abort:
+                            raise
+                        except Exception as e:
+                            click.secho(f"Pack metadata review failed: {e}", fg="yellow")
+
+                    # Validation (same as individual)
+                    from simurg.metadata.magazine import validate_magazine_metadata
+
+                    missing = validate_magazine_metadata(metadata)
+                    if "language" in missing:
+                        found = (metadata.get("language") or "").strip() or "(empty)"
+                        click.secho(
+                            f"{FAIL_SYMBOL} Skipping {canonical_display} {pack_key}: language '{found}' not allowed per docs/magazine.txt §10",
+                            fg="red",
+                            bold=True,
+                        )
+                        skipped += 1
+                        continue
+                    if "release_title" in missing:
+                        click.secho(
+                            f"{FAIL_SYMBOL} Skipping {canonical_display} {pack_key}: missing release_title",
+                            fg="red",
+                            bold=True,
+                        )
+                        skipped += 1
+                        continue
+                    if missing:
+                        click.secho(
+                            f"Warning: missing fields {missing} for pack {canonical_display} {pack_key}",
+                            fg="yellow",
+                        )
+
+                    # Show pack metadata summary
+                    click.secho("\nPack metadata:", fg="cyan")
+                    for k in [
+                        "title",
+                        "release_title",
+                        "year",
+                        "publisher",
+                        "release_type",
+                        "page_count",
+                        "format",
+                        "source",
+                        "language",
+                    ]:
+                        click.echo(f" {k:15}: {metadata.get(k)}")
+                    # Show manifest preview (first 5 + total)
+                    manifest_preview = metadata.get("album_desc", "").split("\n")[:6]
+                    for line in manifest_preview:
+                        click.echo(f"  {line}")
+                    if len(metadata.get("album_desc", "").split("\n")) > 6:
+                        click.echo(f"  ... ({len(pack_files)} issues total)")
+
+                    # Cover handling — same as individual: scraper cover -> fallback -> none
+                    cover_url = None
+                    cover_scraper = metadata.get("cover_url_scraper")
+                    temp_cover = None
+                    if cover and not temp_cover:
+                        tmp = _download_url_to_temp(cover)
+                        if tmp:
+                            temp_cover = tmp
+                            click.secho(f"Downloaded cover (override): {cover}", fg="green")
+                    if cover_scraper and not temp_cover:
+                        tmp = _download_url_to_temp(cover_scraper)
+                        if tmp:
+                            temp_cover = tmp
+                            click.secho(
+                                f"Downloaded cover from scraper: {cover_scraper}", fg="green"
+                            )
+                    if not temp_cover:
+                        try:
+                            from simurg.metadata.scrapers.duckduckgo import fetch_duckduckgo_cover
+
+                            dd_path = fetch_duckduckgo_cover(canonical_display, [])
+                            if dd_path:
+                                temp_cover = dd_path
+                                click.secho(f"Fallback DuckDuckGo cover: {dd_path}", fg="green")
+                        except Exception:
+                            pass
+                    if temp_cover:
+                        try:
+                            from simurg.images import get_uploader
+
+                            cfg_img = get_config()
+                            uploader_name = str(
+                                cfg_img.image.get("cover_uploader", "ptscreens") or "ptscreens"
+                            )
+                            Uploader = get_uploader(uploader_name)
+                            rehost_url, _ = Uploader().upload_file(temp_cover)
+                            cover_url = rehost_url
+                            click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
+                            click.echo(fmt_url(cover_url))
+                        except Exception as e:
+                            click.secho(f"{FAIL_SYMBOL} Cover rehost failed: {e}", fg="red")
+                            cover_url = None
+                    else:
+                        click.secho(
+                            "No cover found for pack. Continuing without image.", fg="yellow"
+                        )
+                        cover_url = None
+                    if temp_cover:
+                        try:
+                            Path(temp_cover).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    metadata["image"] = cover_url or ""
+
+                    # Staging — create pack directory and copy files
+                    # Determine staging dir same as individual path
+                    staging_dir = None
+                    try:
+                        from simurg.config import get_config as _get_cfg
+
+                        _cfg_tmp = _get_cfg()
+                        staging_dir = str(_cfg_tmp.directory.get("staging_dir", "") or "").strip()
+                        if not staging_dir:
+                            staging_dir = str(
+                                _cfg_tmp.directory.get("upload_directory", "")
+                                or _cfg_tmp.directory.get("download_directory", "")
+                                or ""
+                            ).strip()
+                        if not staging_dir:
+                            staging_dir = ".staging"
+                    except Exception:
+                        staging_dir = ".staging"
+                    staging_path = Path(staging_dir)
+                    if not staging_path.is_absolute():
+                        staging_path = Path.cwd() / staging_path
+                    try:
+                        staging_path.mkdir(parents=True, exist_ok=True)
+                    except Exception:
+                        pass
+                    # Pack dir name: "{Canonical} - {Release title}" sanitized
+                    pack_dir_name = _sanitize_filename(
+                        f"{canonical_display} - {metadata.get('release_title')}"
+                    )
+                    # Avoid double "Complete Year" duplication if canonical already contains year? Keep as is per user example "Playboy - 1995 Complete Year"
+                    pack_dir = staging_path / pack_dir_name
+                    try:
+                        pack_dir.mkdir(parents=True, exist_ok=True)
+                        # Copy files sorted
+                        for src in sorted(pack_files, key=lambda p: p.name.lower()):
+                            dest = pack_dir / src.name
+                            if not dest.exists() or dest.stat().st_size != src.stat().st_size:
+                                shutil.copy2(str(src), str(dest))
+                        click.secho(
+                            f"Staged pack to {pack_dir} ({len(pack_files)} files)", fg="green"
+                        )
+                    except Exception as e:
+                        click.secho(f"Pack staging failed for {pack_dir}: {e}", fg="red")
+                        failed += 1
+                        continue
+
+                    # Build release_desc
+                    from simurg.uploader.payload import build_release_desc
+
+                    metadata["release_desc"] = build_release_desc(
+                        metadata, metadata.get("source_urls")
+                    )
+                    if metadata.get("source") == "Other":
+                        metadata["release_desc"] = (
+                            metadata["release_desc"]
+                            + "\n[b]Source note:[/b] marked Other (provenance unverified; please confirm)."
+                        ).strip()
+
+                    # Dupe and request check (pack-level)
+                    search_gid = group_id
+                    request_id = None
+                    if gazelle_site:
+                        from simurg.uploader.dupe import (
+                            check_existing_group,
+                            generate_dupe_search_strs,
+                        )
+
+                        searchstrs = generate_dupe_search_strs(metadata["title"], [], None)
+                        # Include pack release title in search
+                        searchstrs = [
+                            *searchstrs,
+                            f"{canonical_display} {metadata.get('release_title')}",
+                        ]
+                        click.secho(f"Searching Simurg for dupes: {searchstrs}", fg="yellow")
+                        try:
+                            result_gid = check_existing_group(
+                                gazelle_site, searchstrs, group_id_override=group_id
+                            )
+                            if result_gid == "skip":
+                                click.secho(
+                                    f"Skipping pack {pack_dir_name} per user choice", fg="yellow"
+                                )
+                                skipped += 1
+                                continue
+                            search_gid = result_gid
+                        except click.Abort:
+                            raise
+                        except Exception as e:
+                            click.secho(f"Dupe check failed: {e}", fg="yellow")
+
+                    # Generate torrent + upload (directory)
+                    try:
+                        from simurg.uploader.upload import prepare_and_upload
+
+                        if gazelle_site is None:
+                            # Dry-run without session: dummy site for torrent announce
+                            announce = ""
+                            try:
+                                from simurg.config import get_config as _get_cfg2
+
+                                _cfg_t = _get_cfg2()
+                                tcfg = _cfg_t.get_tracker_cfg("simurg")
+                                announce = str(tcfg.get("announce_url") or "")
+                            except Exception:
+                                announce = ""
+                            if not announce:
+                                announce = "https://tracker.simurg.world/announce"
+
+                            class TorrentCtx:
+                                announce = ""
+                                dot_torrents_dir = dottorrents_dir
+                                site_string = "SIM"
+
+                            torrent_site = TorrentCtx()
+                            torrent_site.announce = announce
+                        else:
+                            torrent_site = gazelle_site
+
+                        prepare_and_upload(
+                            torrent_site,
+                            pack_dir,
+                            search_gid,
+                            metadata,
+                            cover_url,
+                            request_id,
+                            dry_run=dry_run,
+                            category=category,
+                        )
+                        uploaded += 1
+                    except click.Abort:
+                        raise
+                    except Exception as e:
+                        click.secho(f"Failed to upload {pack_dir_name}: {e}", fg="red")
+                        failed += 1
+                        continue
+
+                # Summary for packs
+                click.secho("\n" + "=" * 60, fg="cyan")
+                if dry_run:
+                    color = "green" if failed == 0 else "yellow"
+                    click.secho(
+                        f"{OK_SYMBOL if failed == 0 else WARN_SYMBOL} Summary: Dry-run — prepared {uploaded}/{len(packs)} pack(s) (torrents in {dottorrents_dir}/, no uploads sent), skipped {skipped}, failed {failed}",
+                        fg=color,
+                        bold=True,
+                    )
+                else:
+                    color = "green" if failed == 0 else "yellow"
+                    sym = OK_SYMBOL if failed == 0 else WARN_SYMBOL
+                    click.secho(
+                        f"{sym} Summary: Uploaded {uploaded}/{len(packs)} pack(s), skipped {skipped}, failed {failed} — check {dottorrents_dir}/",
+                        fg=color,
+                        bold=True,
+                    )
+                return
+
     for idx, filepath in enumerate(ebook_files):
         # Sleep between uploads to avoid rate limiting (15s) — skip for dry-run
         if idx > 0 and not dry_run:
@@ -846,7 +1455,7 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
         click.secho("\n" + "=" * 60, fg="cyan")
         click.secho(f"Processing: {filepath.name}", fg="cyan", bold=True)
         ext = filepath.suffix.lower()
-        fmt = format_map.get(ext, ext.upper().lstrip("."))
+        fmt = fmt_override if fmt_override else format_map.get(ext, ext.upper().lstrip("."))
 
         # [2] Decode inbuilt
         if is_mag:
@@ -1141,6 +1750,13 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             from simurg.metadata.magazine import build_magazine_metadata, validate_magazine_metadata
 
             metadata = build_magazine_metadata(inbuilt, scraper_data, fmt, str(filepath))
+            # CLI overwrites (before review so user sees final values)
+            if source_override is not None:
+                metadata["source"] = source_override
+            if fmt_override:
+                metadata["format"] = fmt_override
+            if lang_override:
+                metadata["language"] = lang_override
             # [4a.0] .cache/magazine_issns.csv — exact-publisher reuse.
             # Publisher is the stable key (ISSN/country belong to publisher, not
             # issue title — e.g. "Penthouse" publisher reuses 1019-5009 across
@@ -1546,10 +2162,15 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             from simurg.metadata.combine import build_metadata, validate_metadata
 
             metadata = build_metadata(inbuilt, scraper_data, fmt, str(filepath))
-        # Default source: explicit --source wins; otherwise "Other" (never silently
-        # claim Retail per rules.txt:61 — Retail requires provenance proof).
-        if not metadata.get("source"):
-            metadata["source"] = source or "Other"
+        # CLI overwrites (before review so user sees final values)
+        if source_override is not None:
+            metadata["source"] = source_override
+        elif not metadata.get("source"):
+            metadata["source"] = "Other"
+        if fmt_override:
+            metadata["format"] = fmt_override
+        if lang_override:
+            metadata["language"] = lang_override
 
         # [4b] Field review: let the user keep/override/append file metadata vs the
         # chosen scraper result (description, edition, illustrators, title, authors, ...).
