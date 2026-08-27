@@ -128,6 +128,8 @@ class OpenAlexScraper(BaseScraper):
             if isinstance(publisher, dict):
                 publisher = publisher.get("display_name")
             # Country: not reliably in /sources; leave None
+            # Do NOT echo issue identity — OpenAlex /sources has no issue
+            # data; echoing would fake provenance (docs/magazine.txt §19).
             return {
                 "title": best.get("display_name") or title,
                 "first_published": None,
@@ -136,10 +138,6 @@ class OpenAlexScraper(BaseScraper):
                 "publisher": publisher,
                 "country": None,
                 "frequency": None,
-                "issue_date": (issue or {}).get("issue_date"),
-                "issue_date_precision": (issue or {}).get("issue_date_precision"),
-                "volume": (issue or {}).get("volume"),
-                "issue_number": (issue or {}).get("issue_number"),
                 "page_count": None,
                 "language": None,
                 "cover_url": None,

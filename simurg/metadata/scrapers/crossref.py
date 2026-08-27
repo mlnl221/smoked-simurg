@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from simurg.metadata.scrapers.base import BaseScraper
-from simurg.metadata.scrapers.util import clean_issn, year_from
+from simurg.metadata.scrapers.util import clean_issn
 
 
 class CrossrefScraper(BaseScraper):
@@ -31,12 +31,12 @@ class CrossrefScraper(BaseScraper):
                 if not t:
                     continue
                 issns = it.get("ISSN") or []
-                issued = it.get("issued", {}).get("date-parts", [[]])[0]
-                year = issued[0] if issued else None
                 publisher = it.get("publisher")
+                # Crossref issued date is the article year, not the
+                # periodical's first-published year (docs/magazine.txt §4).
                 return {
                     "title": t,
-                    "first_published": year_from(year),
+                    "first_published": None,
                     "print_issn": clean_issn(issns[0]) if len(issns) >= 1 else None,
                     "electronic_issn": clean_issn(issns[1]) if len(issns) >= 2 else None,
                     "publisher": publisher,

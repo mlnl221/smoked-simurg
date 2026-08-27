@@ -32,11 +32,13 @@ class LibraryOfCongressScraper(BaseScraper):
                 pub = res.get("publisher") or res.get("publisher_name")
                 if isinstance(pub, list):
                     pub = pub[0] if pub else None
-                dates = res.get("publish_date") or []
-                year = year_from(dates[0]) if dates else None
+                # LOC publish_date for periodicals is often an issue year,
+                # not the magazine's first-published year (docs/magazine.txt §4).
+                # Only treat as first_published when we can verify it's a serial;
+                # otherwise leave empty so build_magazine_metadata doesn't conflate.
                 return {
                     "title": t,
-                    "first_published": year,
+                    "first_published": None,
                     "publisher": pub,
                     "country": None,
                     "frequency": None,
@@ -81,7 +83,7 @@ class LibraryOfCongressScraper(BaseScraper):
             year = year_from(dates[0]) if dates else None
             return {
                 "title": t,
-                "first_published": year,
+                "first_published": None,
                 "year": year,
                 "publish_year": year,
                 "publisher": pub,

@@ -9,9 +9,10 @@ from simurg.metadata.scrapers.base import BaseScraper
 
 class OpenLibraryScraper(BaseScraper):
     name = "openlibrary"
-    # Shared: used by both the ebook path and the magazine path (scrapers.txt
-    # lists Open Library for magazines too, via a magazine-aware query).
-    categories = {"ebook", "magazine"}
+    # Ebook only: magazine path dropped per docs/magazine.txt review
+    # (OpenLibrary holds book editions, not stable periodical start-year/ISSN;
+    # consumer magazines are hit-or-miss and pollute magazine scrapes).
+    categories = {"ebook"}
     url_domains = {"openlibrary.org"}
 
     def search_isbn(self, isbn: str) -> dict | None:

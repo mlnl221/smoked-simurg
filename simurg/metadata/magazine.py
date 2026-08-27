@@ -51,6 +51,49 @@ MONTH_WORDS = {
 
 MAGAZINE_TYPE = "Magazines"
 
+# Upload form currently only exposes these magazine languages (docs/magazine.txt §10).
+# Non-matching languages must abort, never silently map to English.
+ALLOWED_MAGAZINE_LANGUAGES = {"english", "turkish", "japanese"}
+
+# Normalize common language codes/aliases to the canonical form values above.
+_LANGUAGE_ALIASES = {
+    "en": "English",
+    "eng": "English",
+    "english": "English",
+    "tr": "Turkish",
+    "tur": "Turkish",
+    "turkish": "Turkish",
+    "turkiye": "Turkish",
+    "türkçe": "Turkish",
+    "ja": "Japanese",
+    "jp": "Japanese",
+    "jpn": "Japanese",
+    "japanese": "Japanese",
+    "japan": "Japanese",
+}
+
+
+def _normalize_magazine_language(raw: str | None) -> str:
+    """Map raw language string to canonical English/Turkish/Japanese or ''/original.
+
+    Returns '' for empty input, the canonical cased value for known aliases,
+    and the original stripped value for unknown languages (so validation can
+    correctly abort on Russian etc. instead of silently returning '').
+    """
+    if not raw:
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    low = s.lower()
+    if low in _LANGUAGE_ALIASES:
+        return _LANGUAGE_ALIASES[low]
+    # Also handle values like "en-US", "en_GB"
+    base = re.split(r"[-_\s]+", low)[0]
+    if base in _LANGUAGE_ALIASES:
+        return _LANGUAGE_ALIASES[base]
+    return s
+
 
 def decode_magazine_filename(filepath) -> dict:
     """Parse a magazine filename into an inbuilt-style metadata dict.
@@ -189,8 +232,12 @@ def build_magazine_metadata(
     electronic_issn = clean_issn(scraper.get("electronic_issn"))
     country = scraper.get("country")
     frequency = scraper.get("frequency")
-    language = scraper.get("language") or "English"
-    page_count = scraper.get("page_count") or inbuilt.get("page_count")
+    # Language: do NOT default to English. Leave empty when unknown so CLI
+    # can abort per docs/magazine.txt §10 (form only has English/Turkish/Japanese;
+    # Russian etc. must not silently become English). Normalize known aliases.
+    raw_lang = scraper.get("language") or inbuilt.get("language") or ""
+    language = _normalize_magazine_language(raw_lang) if raw_lang else ""
+    page_count = inbuilt.get("page_count") or scraper.get("page_count")
     if page_count:
         try:
             page_count = int(page_count)
@@ -204,7 +251,10 @@ def build_magazine_metadata(
         if (issue_date or volume or issue_number)
         else ""
     )
-    release_title = f"{canonical} - {label}".strip(" -") if label else canonical
+    # Release title is the issue identity only, never "Canonical - Issue"
+    # (docs/magazine.txt §6: "May be translated or release-specific; it never
+    # renames the Publication." + §3 incorrect example). Canonical stays clean.
+    release_title = label.strip() if label else ""
 
     tags = scraper.get("tags") or clean_tags(scraper.get("subjects") or []) or "magazine"
     if isinstance(tags, list):
@@ -212,7 +262,56 @@ def build_magazine_metadata(
     if not tags or not str(tags).strip():
         tags = "magazine"
 
-    description = scraper.get("description") or ""
+    description = (
+        scraper.get("description")
+        or scraper.get("book_desc")
+        or scraper.get("synopsis")
+        or scraper.get("album_desc")
+        or ""
+    )
+    description = str(description).strip()
+    # Tracker requires synopsis >=10 chars (see .failed/Penthouse Russia... — empty
+    # book_desc was rejected with "The canonical Publication synopsis must be at least
+    # 10 characters."). Magazines rarely have scraper descriptions (ISSN sources
+    # don't provide them), so synthesize a minimal synopsis from available metadata
+    # so validation and the live upload never send an empty book_desc.
+    # Mirrors build_metadata() fallback for ebooks (combine.py:225) but magazine-specific.
+    if not description or len(description) < 10:
+        label = (
+            _issue_label(issue_date, precision, volume, issue_number)
+            if (issue_date or volume or issue_number)
+            else ""
+        )
+        # Base: canonical title + issue label (e.g. "Penthouse — November 2004")
+        if canonical and label:
+            fallback = f"{canonical} — {label}"
+        elif canonical:
+            fallback = canonical
+        else:
+            fallback = "Magazine issue"
+        if year:
+            fallback += f" ({year})"
+        if publisher:
+            fallback += f" - Published by {publisher}"
+        if country:
+            fallback += f" - {country}"
+        issn_any = print_issn or electronic_issn
+        if issn_any:
+            fallback += f" - ISSN {issn_any}"
+        fallback += "."
+        if tags and tags != "magazine":
+            fallback += f" Tags: {tags}."
+        else:
+            fallback += " Tags: magazine."
+        if len(fallback) < 50:
+            fallback += " Uploaded via smoked-simurg. No synopsis available from scrapers."
+        fallback = fallback.strip()
+        if len(fallback) < 10:
+            fallback = "No synopsis available. " + fallback
+        # Truncate at 2000 chars like ebook path
+        if len(fallback) > 2000:
+            fallback = fallback[:2000].strip()
+        description = fallback
 
     return {
         "title": canonical,
@@ -245,7 +344,12 @@ def build_magazine_metadata(
 
 
 def validate_magazine_metadata(md: dict) -> list[str]:
-    """Return missing required magazine fields (Simurg magazine form)."""
+    """Return missing required magazine fields (Simurg magazine form).
+
+    Also enforces docs/magazine.txt §10: the live form only exposes
+    English/Turkish/Japanese. Any other language must be flagged as missing
+    so the caller can abort (never silently map Russian etc. to English).
+    """
     missing = []
     if not md.get("title"):
         missing.append("title")
@@ -257,6 +361,12 @@ def validate_magazine_metadata(md: dict) -> list[str]:
         missing.append("format")
     if not md.get("source"):
         missing.append("source")
+    # Language must be one of the allowed upload-form values; otherwise abort.
+    lang = (md.get("language") or "").strip()
+    if not lang or lang.lower() not in ALLOWED_MAGAZINE_LANGUAGES:
+        missing.append("language")
+    if not md.get("release_title"):
+        missing.append("release_title")
     return missing
 
 

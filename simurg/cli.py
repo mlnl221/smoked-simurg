@@ -855,6 +855,16 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             # Fill year from issue date when missing
             if not inbuilt.get("year") and inbuilt.get("issue_date"):
                 inbuilt["year"] = year_from(inbuilt["issue_date"])
+            # Fill page_count from the actual PDF/DJVU file (docs/magazine.txt §13:
+            # actual PDF page count, not scraper estimate). decode_magazine_filename
+            # does not read the file, so probe the file directly.
+            if not inbuilt.get("page_count"):
+                try:
+                    _file_meta = _decode_inbuilt_quick(filepath)
+                    if _file_meta.get("page_count"):
+                        inbuilt["page_count"] = _file_meta["page_count"]
+                except Exception:
+                    pass
         else:
             inbuilt = _decode_inbuilt_quick(filepath)
             if inbuilt.get("is_encrypted"):
@@ -1130,24 +1140,25 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             from simurg.metadata.magazine import build_magazine_metadata, validate_magazine_metadata
 
             metadata = build_magazine_metadata(inbuilt, scraper_data, fmt, str(filepath))
-            # [4a.0] .cache/magazine_issns.csv — exact-title reuse.
-            # If we already have an ISSN from scraper/filename, persist it so the
-            # next issue with the same exact title can skip scraping. This is the
-            # warm path for Playboy/Penthouse reused across a batch.
+            # [4a.0] .cache/magazine_issns.csv — exact-publisher reuse.
+            # Publisher is the stable key (ISSN/country belong to publisher, not
+            # issue title — e.g. "Penthouse" publisher reuses 1019-5009 across
+            # variants like "Penthouse Letters"). Warm-save for next issue.
             try:
                 from simurg.uploader.magazine_issn import save_magazine_issn_cache
 
-                _canon_for_cache = (
-                    metadata.get("canonical_title") or metadata.get("title") or ""
-                ).strip()
-                if _canon_for_cache and (
-                    metadata.get("print_issn") or metadata.get("electronic_issn")
+                _pub_for_cache = (metadata.get("publisher") or "").strip()
+                if _pub_for_cache and (
+                    metadata.get("print_issn")
+                    or metadata.get("electronic_issn")
+                    or metadata.get("country")
                 ):
                     save_magazine_issn_cache(
-                        _canon_for_cache,
+                        _pub_for_cache,
                         metadata.get("print_issn"),
                         metadata.get("electronic_issn"),
                         source="scraper",
+                        country=metadata.get("country"),
                     )
             except Exception:
                 pass
@@ -1160,27 +1171,23 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                 try:
                     from simurg.metadata.scrapers.openalex import OpenAlexScraper
 
-                    # [4a.0a] .cache/magazine_issns.csv — exact-title reuse.
-                    # Reuse ISSNs scraped earlier in this batch or a previous run
-                    # for the same exact magazine title (e.g. second "Penthouse"
-                    # issue). This avoids re-scraping Simurg/OpenAlex.
+                    # [4a.0a] .cache/magazine_issns.csv — exact-publisher reuse.
+                    # Reuse ISSNs/country for same publisher across issues/variants.
                     try:
                         from simurg.uploader.magazine_issn import lookup_magazine_issn_cache
 
-                        _canon_cache = (
-                            metadata.get("canonical_title") or metadata.get("title") or ""
-                        ).strip()
-                        if _canon_cache:
-                            _cached = lookup_magazine_issn_cache(_canon_cache)
+                        _pub_cache = (metadata.get("publisher") or "").strip()
+                        if _pub_cache:
+                            _cached = lookup_magazine_issn_cache(_pub_cache)
                             if _cached:
                                 _filled_cache = []
-                                for _k in ("print_issn", "electronic_issn"):
+                                for _k in ("print_issn", "electronic_issn", "country"):
                                     if not metadata.get(_k) and _cached.get(_k):
                                         metadata[_k] = _cached[_k]
                                         _filled_cache.append(f"{_k}={_cached[_k]}")
                                 if _filled_cache:
                                     click.secho(
-                                        f"Using cached ISSN from .cache/magazine_issns.csv for '{_canon_cache}': {', '.join(_filled_cache)}",
+                                        f"Using cached ISSN/country from .cache/magazine_issns.csv for publisher '{_pub_cache}': {', '.join(_filled_cache)}",
                                         fg="green",
                                     )
                     except Exception:
@@ -1216,23 +1223,20 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                                     metadata[k] = patch[k]
                             if filled:
                                 click.secho(f"OpenAlex ISSN fill: {', '.join(filled)}", fg="green")
-                                # Persist to .cache/magazine_issns.csv for exact-title reuse.
+                                # Persist to .cache/magazine_issns.csv for exact-publisher reuse.
                                 try:
                                     from simurg.uploader.magazine_issn import (
                                         save_magazine_issn_cache,
                                     )
 
-                                    _canon_save = (
-                                        metadata.get("canonical_title")
-                                        or metadata.get("title")
-                                        or ""
-                                    ).strip()
-                                    if _canon_save:
+                                    _pub_save = (metadata.get("publisher") or "").strip()
+                                    if _pub_save:
                                         save_magazine_issn_cache(
-                                            _canon_save,
+                                            _pub_save,
                                             metadata.get("print_issn"),
                                             metadata.get("electronic_issn"),
                                             source="openalex",
+                                            country=metadata.get("country"),
                                         )
                                 except Exception:
                                     pass
@@ -1307,17 +1311,16 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                                                         save_magazine_issn_cache,
                                                     )
 
-                                                    _canon_save2 = (
-                                                        metadata.get("canonical_title")
-                                                        or metadata.get("title")
-                                                        or ""
+                                                    _pub_save2 = (
+                                                        metadata.get("publisher") or ""
                                                     ).strip()
-                                                    if _canon_save2:
+                                                    if _pub_save2:
                                                         save_magazine_issn_cache(
-                                                            _canon_save2,
+                                                            _pub_save2,
                                                             metadata.get("print_issn"),
                                                             metadata.get("electronic_issn"),
                                                             source="openalex_url",
+                                                            country=metadata.get("country"),
                                                         )
                                                 except Exception:
                                                     pass
@@ -1345,9 +1348,14 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                     click.secho(f"OpenAlex ISSN lookup failed: {e}", fg="yellow")
                 # [4a.1] Simurg fallback when OpenAlex yields nothing — search Simurg
                 # for an existing magazine (Playboy/Penthouse etc.) and offer its
-                # ISSNs for direct reuse (option A). Only when still missing ISSN
-                # after the forced OpenAlex pass.
-                if not metadata.get("print_issn") or not metadata.get("electronic_issn"):
+                # ISSNs (+ publisher/country) for direct reuse (option A). Only when
+                # still missing ISSN or publisher/country after the forced OpenAlex pass.
+                if (
+                    not (metadata.get("print_issn") or "").strip()
+                    or not (metadata.get("electronic_issn") or "").strip()
+                    or not (metadata.get("publisher") or "").strip()
+                    or not (metadata.get("country") or "").strip()
+                ):
                     try:
                         from simurg.uploader.magazine_issn import (
                             prompt_simurg_issn_reuse,
@@ -1406,9 +1414,12 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                                         title = cand.get("title") or "?"
                                         year = cand.get("year") or "?"
                                         pub = cand.get("publisher") or ""
+                                        country = cand.get("country") or ""
                                         line = f"  [{idx}] {title} ({year}) — {issn_str}"
                                         if pub:
                                             line += f" · {pub}"
+                                        if country:
+                                            line += f" · {country}"
                                         line += f"  {fmt_url(cand.get('url') or '')}"
                                         click.echo(line)
                                     if dry_run:
@@ -1433,17 +1444,14 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                                                     save_magazine_issn_cache,
                                                 )
 
-                                                _canon_s = (
-                                                    metadata.get("canonical_title")
-                                                    or metadata.get("title")
-                                                    or ""
-                                                ).strip()
-                                                if _canon_s:
+                                                _pub_s = (metadata.get("publisher") or "").strip()
+                                                if _pub_s:
                                                     save_magazine_issn_cache(
-                                                        _canon_s,
+                                                        _pub_s,
                                                         metadata.get("print_issn"),
                                                         metadata.get("electronic_issn"),
                                                         source="simurg",
+                                                        country=metadata.get("country"),
                                                     )
                                             except Exception:
                                                 pass
@@ -1499,17 +1507,16 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
                                                                 save_magazine_issn_cache,
                                                             )
 
-                                                            _canon_s2 = (
-                                                                metadata.get("canonical_title")
-                                                                or metadata.get("title")
-                                                                or ""
+                                                            _pub_s2 = (
+                                                                metadata.get("publisher") or ""
                                                             ).strip()
-                                                            if _canon_s2:
+                                                            if _pub_s2:
                                                                 save_magazine_issn_cache(
-                                                                    _canon_s2,
+                                                                    _pub_s2,
                                                                     metadata.get("print_issn"),
                                                                     metadata.get("electronic_issn"),
                                                                     source="simurg",
+                                                                    country=metadata.get("country"),
                                                                 )
                                                         except Exception:
                                                             pass
@@ -1617,6 +1624,34 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
             except Exception as e:
                 click.secho(f"Editor review failed: {e}", fg="yellow")
 
+        # [4c.1] Persist ISSN/country after manual editor edits — publisher is
+        # the stable key (e.g. Penthouse). Save after review so hand-typed ISSN/
+        # country is reused for next issue with same publisher.
+        if is_mag:
+            try:
+                from simurg.uploader.magazine_issn import save_magazine_issn_cache
+
+                _pub_after_review = (metadata.get("publisher") or "").strip()
+                if _pub_after_review and (
+                    metadata.get("print_issn")
+                    or metadata.get("electronic_issn")
+                    or metadata.get("country")
+                ):
+                    saved = save_magazine_issn_cache(
+                        _pub_after_review,
+                        metadata.get("print_issn"),
+                        metadata.get("electronic_issn"),
+                        source="manual",
+                        country=metadata.get("country"),
+                    )
+                    if saved:
+                        click.secho(
+                            f"Saved ISSN/country to .cache/magazine_issns.csv for publisher '{_pub_after_review}'",
+                            fg="green",
+                        )
+            except Exception:
+                pass
+
         # Build tags: clean
         # Ensure tags not forbidden praise etc already handled
 
@@ -1655,11 +1690,32 @@ def up(directory, dry_run, group_id, cover, no_rename, category, source, no_revi
         elif not dry_run:
             click.secho("Skipping Simurg dupe search (no gazelle_site)", fg="yellow")
 
-        # [7] Validate metadata (no interactive prompts — always upload)
+        # [7] Validate metadata
         if is_mag:
             from simurg.metadata.magazine import validate_magazine_metadata
 
             missing = validate_magazine_metadata(metadata)
+            # Abort on language violation per docs/magazine.txt §10: form only
+            # has English/Turkish/Japanese — Russian etc. must never silently
+            # become English. Also abort if release_title is empty.
+            if "language" in missing:
+                found = (metadata.get("language") or "").strip() or "(empty)"
+                click.secho(
+                    f"{FAIL_SYMBOL} Skipping {filepath.name}: language '{found}' "
+                    f"not in allowed {{English, Turkish, Japanese}} per docs/magazine.txt §10 — aborting upload",
+                    fg="red",
+                    bold=True,
+                )
+                skipped += 1
+                continue
+            if "release_title" in missing:
+                click.secho(
+                    f"{FAIL_SYMBOL} Skipping {filepath.name}: missing release_title/issue identity — cannot derive issue label",
+                    fg="red",
+                    bold=True,
+                )
+                skipped += 1
+                continue
         else:
             from simurg.metadata.combine import validate_metadata
 

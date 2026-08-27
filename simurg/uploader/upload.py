@@ -159,10 +159,15 @@ def prepare_and_upload(
                 for pid in ids[:3]:  # try first 3
                     click.secho(f"Retrying upload to existing Publication {pid}...", fg="yellow")
                     try:
-                        # Build data for existing publication
-                        retry_data = compile_data_existing_publication(
-                            pid, metadata, cover_url, request_id
-                        )
+                        # Build data for existing publication — category-aware (magazines use magazine payload)
+                        if category == "magazines":
+                            retry_data = compile_data_existing_magazine(
+                                pid, metadata, cover_url, request_id
+                            )
+                        else:
+                            retry_data = compile_data_existing_publication(
+                                pid, metadata, cover_url, request_id
+                            )
                         # Need to re-add auth (will be added in upload)
                         retry_tid, retry_gid = loop.run_until_complete(
                             gazelle_site.upload(retry_data, files)

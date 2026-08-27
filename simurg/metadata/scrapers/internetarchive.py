@@ -134,7 +134,7 @@ class InternetArchiveScraper(BaseScraper):
                 "publisher": pub,
                 "year": year,
                 "publish_year": year,
-                "first_published": year,
+                "first_published": None,
                 "page_count": meta.get("number_of_pages"),
                 "language": lang,
                 "subjects": meta.get("subject") or [],

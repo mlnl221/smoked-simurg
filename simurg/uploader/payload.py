@@ -78,6 +78,65 @@ def _magazine_issue_date_for_payload(raw: str | None) -> str:
     return s
 
 
+def _ensure_magazine_synopsis(metadata: dict) -> str:
+    """Ensure magazine synopsis (book_desc) is >=10 chars for Simurg.
+
+    Defensive fallback at the payload layer so even if build_magazine_metadata
+    is bypassed or the user clears the synopsis in review, we never POST an
+    empty or trivially-short ``book_desc`` (which Simurg rejects with
+    "The canonical Publication synopsis must be at least 10 characters." —
+    see .failed/Penthouse Russia - November 2004*.json).
+    Mirrors the fallback in build_magazine_metadata but operates on the final
+    merged metadata dict so it also covers manual edits.
+    """
+    raw = (metadata.get("book_desc") or metadata.get("description") or "").strip()
+    if raw and len(raw) >= 10:
+        return raw
+    # Synthesize from available magazine metadata
+    title = (metadata.get("title") or metadata.get("canonical_title") or "Magazine issue").strip()
+    # Reuse issue_label helper for a nice label
+    try:
+        from simurg.metadata.scrapers.util import issue_label as _il
+
+        label = _il(
+            metadata.get("issue_date"),
+            metadata.get("issue_date_precision"),
+            metadata.get("volume"),
+            metadata.get("issue_number"),
+        )
+    except Exception:
+        label = ""
+    if title and label:
+        fallback = f"{title} — {label}"
+    else:
+        fallback = title or "Magazine issue"
+    year = metadata.get("year")
+    if year:
+        fallback += f" ({year})"
+    publisher = (metadata.get("publisher") or "").strip()
+    if publisher:
+        fallback += f" - Published by {publisher}"
+    country = (metadata.get("country") or "").strip()
+    if country:
+        fallback += f" - {country}"
+    issn_any = (metadata.get("print_issn") or metadata.get("electronic_issn") or "").strip()
+    if issn_any:
+        fallback += f" - ISSN {issn_any}"
+    fallback += "."
+    tags = (metadata.get("tags") or "").strip()
+    if tags and tags != "magazine":
+        fallback += f" Tags: {tags}."
+    else:
+        fallback += " Tags: magazine."
+    if len(fallback) < 50:
+        fallback += " Uploaded via smoked-simurg. No synopsis available from scrapers."
+    if len(fallback) < 10:
+        fallback = "No synopsis available. " + fallback
+    if len(fallback) > 2000:
+        fallback = fallback[:2000].strip()
+    return fallback.strip()
+
+
 def _build_artists_importance(metadata: dict):
     """Return (artists[], importance[]) lists for Simurg's 4 contributor roles."""
     artists = []
@@ -251,8 +310,8 @@ def compile_data_new_magazine(
         "image": cover_url or metadata.get("image") or "",
         "language": metadata.get("language", "English"),
         "page_count": str(metadata.get("page_count") or ""),
-        "book_desc": metadata.get("book_desc") or metadata.get("description") or "",
-        "album_desc": metadata.get("release_notes") or "",
+        "book_desc": _ensure_magazine_synopsis(metadata),
+        "album_desc": metadata.get("release_notes") or metadata.get("album_desc") or "",
         "release_desc": metadata.get("release_desc") or "",
         "format": metadata.get("format", "PDF"),
         # Source (Retail/Scan/OCR/Convert/Other) -> legacy "bitrate" field
@@ -301,7 +360,7 @@ def compile_data_existing_magazine(
         "magazine_electronic_issn": metadata.get("electronic_issn") or "",
         "page_count": str(metadata.get("page_count") or ""),
         "language": metadata.get("language", "English"),
-        "book_desc": metadata.get("book_desc") or "",
+        "book_desc": _ensure_magazine_synopsis(metadata),
     }
     if request_id:
         data["requestid"] = str(request_id)

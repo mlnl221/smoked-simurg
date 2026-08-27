@@ -35,6 +35,7 @@ MAGAZINE_EDITABLE = [
     "title",
     "release_title",
     "year",
+    "original_year",
     "volume",
     "issue_number",
     "print_issn",
@@ -43,8 +44,10 @@ MAGAZINE_EDITABLE = [
     "country",
     "frequency",
     "page_count",
+    "language",
     "release_type",
     "tags",
+    "book_desc",
     "album_desc",
 ]
 
@@ -70,10 +73,14 @@ def _print_metadata(metadata: dict, is_mag: bool) -> None:
     # intentionally omitted. Empty values are shown as dim "(empty)" instead
     # of being hidden (previous behaviour skipped them).
     # `album_desc` is a Gazelle-legacy wire name: for ebooks it is the
-    # synopsis/description, for magazines it is the per-issue release notes
+    # synopsis/description, for magazines `book_desc` is the canonical synopsis
+    # and `album_desc` is the per-issue release notes
     # (see `simurg/uploader/payload.py:15` and `simurg/metadata/combine.py:240`).
-    # Display it as `description` so users are not confused by music jargon.
-    display_labels = {"album_desc": "description"}
+    # Display them as `description` / `release_notes` so users are not confused.
+    if is_mag:
+        display_labels = {"book_desc": "description", "album_desc": "release_notes"}
+    else:
+        display_labels = {"album_desc": "description"}
     keys = MAGAZINE_EDITABLE if is_mag else EBOOK_EDITABLE
     for k in keys:
         v = metadata.get(k)
@@ -197,6 +204,7 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "t": lambda: _edit_scalar(metadata, "title", editor),
             "r": lambda: _edit_scalar(metadata, "release_title", editor),
             "y": lambda: _edit_scalar(metadata, "year", editor, is_int=True),
+            "oy": lambda: _edit_scalar(metadata, "original_year", editor, is_int=True),
             "v": lambda: _edit_scalar(metadata, "volume", editor),
             "i": lambda: _edit_scalar(metadata, "issue_number", editor),
             "is": lambda: _edit_scalar(metadata, "print_issn", editor),
@@ -205,15 +213,17 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "c": lambda: _edit_scalar(metadata, "country", editor),
             "f": lambda: _edit_scalar(metadata, "frequency", editor),
             "pg": lambda: _edit_scalar(metadata, "page_count", editor, is_int=True),
+            "l": lambda: _edit_scalar(metadata, "language", editor),
             "rt": lambda: _edit_scalar(metadata, "release_type", editor),
             "g": lambda: _edit_list(metadata, "tags", editor),
-            "d": lambda: _edit_scalar(metadata, "album_desc", editor),
+            "d": lambda: _edit_scalar(metadata, "book_desc", editor),
+            "rn": lambda: _edit_scalar(metadata, "album_desc", editor),
             "*": lambda: _edit_all_json(metadata, editable, editor),
         }
         menu = (
-            "\nRevise metadata? [t]itle [r]elease title [y]ear [v]olume [i]ssue "
-            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]requency [pg]pages "
-            "[rt]release type [g]enres/tags [d]escription [*]edit ALL (JSON) [n]othing"
+            "\nRevise metadata? [t]itle [r]elease title [y]ear [oy]riginal year [v]olume [i]ssue "
+            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]requency [pg]pages [l]anguage "
+            "[rt]release type [g]enres/tags [d]escription [rn]release notes [*]edit ALL (JSON) [n]othing"
         )
     else:
         edit_functions = {

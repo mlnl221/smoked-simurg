@@ -14,9 +14,6 @@ from simurg.metadata.enricher import (
     LibraryOfCongressScraper as _EnrLOC,
 )
 from simurg.metadata.enricher import (
-    OpenLibraryScraper as _EnrOL,
-)
-from simurg.metadata.enricher import (
     _all_scrapers,
     _scrapers_for,
     search_magazine_scrapers,
@@ -185,7 +182,8 @@ def test_build_magazine_metadata():
     }
     md = build_magazine_metadata(inbuilt, scraper, "PDF")
     assert md["title"] == "National Geographic"
-    assert md["release_title"] == "National Geographic - June 2020"
+    # Release title is issue label only per docs/magazine.txt §6 (never "Canonical - Issue")
+    assert md["release_title"] == "June 2020"
     assert md["print_issn"] == "0027-9358"
     assert md["electronic_issn"] == "1936-6618"
     assert md["publisher"] == "National Geographic Society"
@@ -202,12 +200,44 @@ def test_validate_magazine_metadata():
         "issue_date": "2020-06",
         "format": "PDF",
         "source": "Retail",
+        "language": "English",
+        "release_title": "June 2020",
     }
     assert validate_magazine_metadata(ok) == []
     missing = validate_magazine_metadata(
-        {"title": "X", "year": 2020, "format": "PDF", "source": "Retail"}
+        {
+            "title": "X",
+            "year": 2020,
+            "format": "PDF",
+            "source": "Retail",
+            "language": "English",
+            "release_title": "June 2020",
+        }
     )
     assert "issue_identity" in missing
+    # Language must be English/Turkish/Japanese or missing; Russian must be flagged
+    assert "language" in validate_magazine_metadata(
+        {
+            "title": "X",
+            "year": 2020,
+            "issue_date": "2020-06",
+            "format": "PDF",
+            "source": "Retail",
+            "language": "Russian",
+            "release_title": "June 2020",
+        }
+    )
+    assert "language" in validate_magazine_metadata(
+        {
+            "title": "X",
+            "year": 2020,
+            "issue_date": "2020-06",
+            "format": "PDF",
+            "source": "Retail",
+            "language": "",
+            "release_title": "June 2020",
+        }
+    )
 
 
 def test_magazine_issue_label_helper():
@@ -227,7 +257,7 @@ def test_compile_new_magazine_payload():
     md = {
         "title": "National Geographic",
         "canonical_title": "National Geographic",
-        "release_title": "National Geographic - June 2020",
+        "release_title": "June 2020",
         "year": 2020,
         "original_year": 1888,
         "issue_date": "2020-06",
@@ -264,7 +294,7 @@ def test_compile_new_magazine_payload():
     # (see .failed/Penthouse*.json:30 — "2002-02" rejected). Payload pads to -01.
     assert data["magazine_issue_date"] == "2020-06-01"
     assert data["magazine_issue_date_precision"] == "month"
-    assert data["title"] == "National Geographic - June 2020"
+    assert data["title"] == "June 2020"
     assert data["bitrate"] == "Retail"
     # Magazines must NOT send ebook-style fields
     assert "catalogue_number" not in data
@@ -297,7 +327,7 @@ def test_build_magazine_unknown_publisher_blank():
 
 def test_compile_existing_magazine_payload():
     md = {
-        "release_title": "National Geographic - June 2020",
+        "release_title": "June 2020",
         "year": 2020,
         "issue_date": "2020-06",
         "issue_date_precision": "month",
@@ -347,7 +377,7 @@ def test_magazine_path_only_magazine_scrapers():
     names = {s.name for s in mag}
     assert "crossref" in names
     assert "openalex" in names
-    assert "openlibrary" in names  # shared
+    assert "openlibrary" not in names  # removed from magazine path per docs/magazine.txt
     assert "googlebooks" not in names
 
 
@@ -364,7 +394,6 @@ def test_search_magazine_scrapers_invokes_only_magazine():
         "internetarchive": _EnrIA,
         "libraryofcongress": _EnrLOC,
         "crossref": _EnrCrossref,
-        "openlibrary": _EnrOL,
         "librarything": _EnrLT,
         "wonderclub": _EnrWC,
         "openalex": _EnrOA,
@@ -373,7 +402,6 @@ def test_search_magazine_scrapers_invokes_only_magazine():
         "internetarchive": {"title": "IA"},
         "libraryofcongress": {"title": "LOC"},
         "crossref": {"title": "CR"},
-        "openlibrary": {"title": "OL"},
         "librarything": {"title": "LT"},
         "wonderclub": {"title": "WC"},
         "openalex": {"title": "OA"},
@@ -389,11 +417,11 @@ def test_search_magazine_scrapers_invokes_only_magazine():
             "internetarchive",
             "libraryofcongress",
             "crossref",
-            "openlibrary",
             "librarything",
             "wonderclub",
             "openalex",
         }
+        assert "openlibrary" not in got
     finally:
         for name, fn in originals.items():
             classes[name].search_magazine = fn
@@ -457,7 +485,8 @@ def test_libraryofcongress_scraper():
     sc = LibraryOfCongressScraper(sess)
     res = sc.search_magazine("National Geographic")
     assert res["title"] == "National Geographic"
-    assert res["first_published"] == 1888
+    # LOC first_published is now None (publish_date conflates issue year, docs/magazine.txt §4)
+    assert res["first_published"] is None
     assert res["publisher"] == "National Geographic Society"
 
 
@@ -486,7 +515,8 @@ def test_crossref_scraper():
     res = sc.search_magazine("National Geographic")
     assert res["print_issn"] == "0027-9358"
     assert res["electronic_issn"] == "1936-6618"
-    assert res["first_published"] == 1888
+    # Crossref issued is article year, not periodical first-published (docs/magazine.txt §4)
+    assert res["first_published"] is None
 
 
 def test_openlibrary_search_magazine():
@@ -511,11 +541,12 @@ def test_openlibrary_search_magazine():
         }
     )
     sc = OpenLibraryScraper(sess)
-    assert sc.categories == {"ebook", "magazine"}
-    res = sc.search_magazine("National Geographic")
-    assert res["title"] == "National Geographic"
-    assert res["first_published"] == 1888
-    assert res["language"] == "English"
+    assert sc.categories == {"ebook"}
+    assert "magazine" not in sc.categories
+    # Direct search_magazine still parses (legacy) but enricher no longer routes magazines to it
+    from simurg.metadata.enricher import _scrapers_for as _sf2
+
+    assert "openlibrary" not in {s.name for s in _sf2(sess, {"magazine"})}
 
 
 # --- LibraryThing scraper (mocked) ---

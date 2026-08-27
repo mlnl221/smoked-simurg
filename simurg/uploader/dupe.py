@@ -279,10 +279,52 @@ def check_existing_group(gazelle_site, searchstrs, offer_deletion=False, group_i
         except Exception:
             pass
 
+    def _norm(s: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", s.lower())).strip()
+
     # Auto-select: only reuse an existing Publication if the first match is a
-    # high-confidence title+author match. Otherwise create a new Publication.
+    # high-confidence title+author match. Otherwise prompt instead of silently
+    # creating a new Publication (which the tracker will reject as
+    # "Publication already exists" if a similar title already exists).
     if results:
         our_title = searchstrs[0] if searchstrs else ""
+        # 1) Exact normalized title match anywhere in results → auto-select immediately.
+        #    This catches magazine canonical titles ("Penthouse" == "Penthouse") even when
+        #    fuzzy ratio is diluted by an author prefix in our_title ("Author Title").
+        norm_our = _norm(our_title)
+        # Also try bare title (last searchstr without author) for ebooks.
+        norm_bare = _norm(searchstrs[-2] if len(searchstrs) >= 2 else our_title)
+        # collect titles from all results for exact check
+        for r in results:
+            cand_title_raw = r.get("groupName") or r.get("name") or ""
+            cand_artist_raw = r.get("artist") or r.get("author") or ""
+            gid_cand = r.get("groupId") or r.get("group_id") or r.get("id")
+            if gid_cand is None:
+                continue
+            norm_cand = _norm(cand_title_raw)
+            # exact title equality
+            if norm_cand and norm_cand == norm_our:
+                click.secho(
+                    f"Auto-selecting existing Publication {gid_cand} ({cand_title_raw}) [exact title match]",
+                    fg="yellow",
+                )
+                return int(gid_cand)
+            if norm_cand and norm_cand == norm_bare:
+                click.secho(
+                    f"Auto-selecting existing Publication {gid_cand} ({cand_title_raw}) [exact title match]",
+                    fg="yellow",
+                )
+                return int(gid_cand)
+            # exact "artist title" combined match
+            if cand_artist_raw:
+                norm_combined = _norm(f"{cand_artist_raw} {cand_title_raw}")
+                if norm_combined and norm_combined == norm_our:
+                    click.secho(
+                        f"Auto-selecting existing Publication {gid_cand} ({cand_title_raw}) [exact author+title match]",
+                        fg="yellow",
+                    )
+                    return int(gid_cand)
+
         best = results[0]
         gid = best.get("groupId") or best.get("group_id") or best.get("id")
         cand_title = best.get("groupName") or best.get("name") or ""
@@ -301,9 +343,30 @@ def check_existing_group(gazelle_site, searchstrs, offer_deletion=False, group_i
                 fg="yellow",
             )
             return int(gid)
+        # Low-confidence but results exist — prompt interactively instead of
+        # silently creating a new Publication that the site may reject.
         click.secho(
-            f"Results not a confident match ({ratio:.2f}) - creating new Publication.", fg="green"
+            f"Results not a confident match ({ratio:.2f}) — please confirm.",
+            fg="yellow",
         )
-        return None
+        try:
+            chosen = _prompt_for_group_id(gazelle_site, results)
+        except click.Abort:
+            raise
+        if chosen == "skip":
+            return "skip"
+        if chosen is None:
+            click.secho("Creating new Publication.", fg="green")
+            return None
+        # Confirm the chosen id shows correct publication
+        try:
+            if _confirm_group_id(gazelle_site, chosen, results):
+                return int(chosen)
+            click.secho("Creating new Publication.", fg="green")
+            return None
+        except click.Abort:
+            raise
+        except Exception:
+            return int(chosen)
     click.secho("No existing Publication found - creating new.", fg="green")
     return None
