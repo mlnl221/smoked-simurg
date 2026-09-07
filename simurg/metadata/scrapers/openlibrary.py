@@ -215,8 +215,8 @@ class OpenLibraryScraper(BaseScraper):
         m = re.search(r"/isbn/([0-9Xx\-]+)$", path)
         if m:
             return self.search_isbn(m.group(1))
-        # /books/<OLID> (edition) or /works/<OLID>
-        m = re.search(r"/(books|works)/(OL\d+[A-Za-z0-9]*)$", path)
+        # /books/<OLID> (edition) or /works/<OLID>; trailing title slug ignored
+        m = re.search(r"/(books|works)/(OL\d+[A-Za-z0-9]*)(?:/[^/]+)?$", path)
         if not m:
             return None
         kind, olid = m.group(1), m.group(2)

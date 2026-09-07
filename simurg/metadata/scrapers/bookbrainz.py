@@ -134,7 +134,7 @@ class BookBrainzScraper(BaseScraper):
         except Exception:
             return None
         m = re.search(
-            r"/(edition|work|book)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            r"/(edition|work|book)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:/[^/]+)?$",
             path,
         )
         if not m:
