@@ -414,5 +414,5 @@ def build_release_desc(metadata: dict, source_urls: list[str] | None = None) -> 
     if metadata.get("release_notes"):
         lines.append(f"\n{metadata['release_notes']}")
     # Add auto note
-    lines.append("\n[i]Uploaded with smoked-simurg v0.1-mlnl[/i]")
+    lines.append("\n[i]Uploaded with smoked-simurg[/i]")
     return "\n".join(lines)

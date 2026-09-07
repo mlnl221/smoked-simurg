@@ -11,8 +11,8 @@ Two APIs, same token/API key:
   ``<commonknowledge><fieldList>`` with fields like ``originalpublicationdate``,
   ``canonicaltitle``, ``series``.
 
-Both use the same API key (``49d54df330220bef9d74e7a18459ef51`` from
-``docs/librarythings.txt``), but Talpa uses ``token`` and the REST API uses
+Both use the same API key (set `[metadata] librarything_token` in
+``config.toml``), but Talpa uses ``token`` and the REST API uses
 ``apikey`` — do not mix parameter names.
 
 Entry points:

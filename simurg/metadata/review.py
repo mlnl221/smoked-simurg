@@ -38,6 +38,8 @@ MAGAZINE_EDITABLE = [
     "original_year",
     "volume",
     "issue_number",
+    "issue_date",
+    "issue_date_precision",
     "print_issn",
     "electronic_issn",
     "publisher",
@@ -46,9 +48,13 @@ MAGAZINE_EDITABLE = [
     "page_count",
     "language",
     "release_type",
+    "format",
+    "source",
     "tags",
     "book_desc",
     "album_desc",
+    "release_desc",
+    "image",
 ]
 
 # Pack-only fields (Year/Decade/Complete Run/Custom Range). These are derived from
@@ -60,6 +66,7 @@ PACK_EDITABLE = [
     "pack_coverage_end",
     "pack_issue_count",
     "pack_is_complete",
+    "pack_issue_manifest",
 ]
 
 
@@ -92,10 +99,14 @@ def _print_metadata(metadata: dict, is_mag: bool, editable: list[str] | None = N
         display_labels = {
             "book_desc": "description",
             "album_desc": "release_notes",
+            "release_desc": "file_desc",
+            "issue_date": "issue_date",
+            "issue_date_precision": "date_precision",
             "pack_coverage_start": "coverage_start",
             "pack_coverage_end": "coverage_end",
             "pack_issue_count": "issue_count",
             "pack_is_complete": "is_complete",
+            "pack_issue_manifest": "issue_manifest",
         }
     else:
         display_labels = {"album_desc": "description"}
@@ -211,8 +222,11 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
     exactly like smoked-salmon-mini. Returns the (mutated) metadata dict.
     """
     # Skip the interactive editor when there's no TTY (e.g. under a test
-    # harness / CI) or during dry-run, where the upload is skipped anyway.
-    if dry_run or not sys.stdin.isatty():
+    # harness / CI). We intentionally still prompt during --dry-run when a TTY
+    # is present so the user can verify/correct pack/issue metadata before
+    # the torrent is generated (the decade-pack path was previously silently
+    # skipped in dry-run, leaving wrong years/publishers uneditable).
+    if not sys.stdin.isatty():
         return metadata
 
     editor = _resolve_editor()
@@ -229,6 +243,8 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "oy": lambda: _edit_scalar(metadata, "original_year", editor, is_int=True),
             "v": lambda: _edit_scalar(metadata, "volume", editor),
             "i": lambda: _edit_scalar(metadata, "issue_number", editor),
+            "id": lambda: _edit_scalar(metadata, "issue_date", editor),
+            "dp": lambda: _edit_scalar(metadata, "issue_date_precision", editor),
             "is": lambda: _edit_scalar(metadata, "print_issn", editor),
             "ie": lambda: _edit_scalar(metadata, "electronic_issn", editor),
             "p": lambda: _edit_scalar(metadata, "publisher", editor),
@@ -237,9 +253,13 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             "pg": lambda: _edit_scalar(metadata, "page_count", editor, is_int=True),
             "l": lambda: _edit_scalar(metadata, "language", editor),
             "rt": lambda: _edit_scalar(metadata, "release_type", editor),
+            "fmt": lambda: _edit_scalar(metadata, "format", editor),
+            "s": lambda: _edit_scalar(metadata, "source", editor),
             "g": lambda: _edit_list(metadata, "tags", editor),
             "d": lambda: _edit_scalar(metadata, "book_desc", editor),
             "rn": lambda: _edit_scalar(metadata, "album_desc", editor),
+            "rd": lambda: _edit_scalar(metadata, "release_desc", editor),
+            "img": lambda: _edit_scalar(metadata, "image", editor),
             "*": lambda: _edit_all_json(metadata, editable, editor),
         }
         if is_pack:
@@ -249,15 +269,17 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
                     "ce": lambda: _edit_scalar(metadata, "pack_coverage_end", editor),
                     "cn": lambda: _edit_scalar(metadata, "pack_issue_count", editor, is_int=True),
                     "cp": lambda: _edit_scalar(metadata, "pack_is_complete", editor, is_int=True),
+                    "im": lambda: _edit_scalar(metadata, "pack_issue_manifest", editor),
                 }
             )
         menu = (
             "\nRevise metadata? [t]itle [r]elease title [y]ear [oy]riginal year [v]olume [i]ssue "
-            "[is]sn [ie]lectronic issn [p]ublisher [c]ountry [f]frequency [pg]ages [l]anguage "
-            "[rt]release type [g]enres/tags [d]escription [rn]release notes"
+            "[id]issue date [dp]precision [is]sn [ie]lectronic issn [p]ublisher [c]ountry "
+            "[f]requency [pg]ages [l]anguage [rt]release type [fmt]format [s]ource "
+            "[g]enres/tags [d]escription [rn]release notes [rd]file desc [img]image"
         )
         if is_pack:
-            menu += " [cs]coverage start [ce]coverage end [cn]issue count [cp]is complete(1/0)"
+            menu += " [cs]coverage start [ce]coverage end [cn]issue count [cp]is complete(1/0) [im]manifest"
         menu += " [*]edit ALL (JSON) [n]othing"
     else:
         edit_functions = {
