@@ -108,15 +108,141 @@ def _download_url_to_temp(url: str) -> str | None:
             return None
         suffix = ".jpg"
         ctype = resp.headers.get("Content-Type", "")
+        if ctype and not ctype.startswith("image/"):
+            return None
         if "png" in ctype:
             suffix = ".png"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        total = 0
         for chunk in resp.iter_content(8192):
-            tmp.write(chunk)
+            if chunk:
+                tmp.write(chunk)
+                total += len(chunk)
         tmp.close()
+        from simurg.images.validate import MIN_COVER_BYTES, is_valid_cover
+
+        if total < MIN_COVER_BYTES:
+            try:
+                Path(tmp.name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+        valid, _ = is_valid_cover(tmp.name)
+        if not valid:
+            try:
+                Path(tmp.name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
         return tmp.name
     except Exception:
         return None
+
+
+def _prompt_manual_cover(title: str, authors: list, dry_run: bool = False) -> str | None:
+    """Prompt for a manual cover URL after automatic sources failed validation."""
+    if dry_run:
+        return None
+    click.echo("Automatic cover sources failed validation.")
+    while True:
+        try:
+            pasted = click.prompt(
+                "Paste cover image URL ([s]kip without cover / [a]bort)", type=str
+            ).strip()
+        except (click.Abort, EOFError):
+            raise click.Abort() from None
+        low = pasted.lower()
+        if low in ("s", "skip", ""):
+            return None
+        if low in ("a", "abort"):
+            raise click.Abort()
+        if not pasted.startswith("http"):
+            click.secho("Cover URL must start with http.", fg="yellow")
+            continue
+        try:
+            tmp = _download_url_to_temp(pasted)
+        except (click.Abort, EOFError):
+            raise click.Abort() from None
+        if tmp:
+            click.secho("Downloaded manual cover", fg="green")
+            return tmp
+        click.secho(
+            "That URL did not yield a valid image (too small/corrupt/non-image) — try again.",
+            fg="yellow",
+        )
+
+
+def _confirm_rehosted_cover(
+    cover_url: str | None,
+    temp_cover: str | None,
+    cover_path: str | None = None,
+    dry_run: bool = False,
+) -> tuple[str | None, str | None]:
+    if not cover_url or not temp_cover or dry_run:
+        return (cover_url, temp_cover)
+    while True:
+        try:
+            ans = (
+                click.prompt(
+                    "Open the link above and check the image ([Enter] keep / [u] new URL / [s] skip without cover / [a]bort)",
+                    type=str,
+                    default="",
+                    show_default=False,
+                )
+                .strip()
+                .lower()
+            )
+            if ans in ("", "y", "yes", "keep"):
+                return (cover_url, temp_cover)
+            if ans in ("s", "skip"):
+                if temp_cover and temp_cover != cover_path:
+                    try:
+                        Path(temp_cover).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                return (None, None)
+            if ans in ("a", "abort"):
+                raise click.Abort()
+            if ans == "u":
+                url = click.prompt("Paste replacement cover image URL", type=str).strip()
+                if not url.startswith("http"):
+                    click.secho("Cover URL must start with http.", fg="yellow")
+                    continue
+                tmp = _download_url_to_temp(url)
+                if tmp is None:
+                    click.secho(
+                        "That URL did not yield a valid image (too small/corrupt/non-image) — keeping current.",
+                        fg="yellow",
+                    )
+                    continue
+                try:
+                    from simurg.config import get_config
+                    from simurg.images import get_uploader
+
+                    cfg = get_config()
+                    name = str(cfg.image.get("cover_uploader", "ptscreens") or "ptscreens")
+                    rehost_url, _ = get_uploader(name)().upload_file(tmp)
+                    if temp_cover and temp_cover != cover_path:
+                        try:
+                            Path(temp_cover).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    cover_url = rehost_url
+                    temp_cover = tmp
+                    click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
+                    click.echo(fmt_url(cover_url))
+                except Exception as e:
+                    click.secho(f"{FAIL_SYMBOL} Cover rehost failed: {e}", fg="red")
+                    try:
+                        Path(tmp).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                continue
+            click.secho("Invalid choice — Enter keeps, u/s/a.", fg="yellow")
+        except EOFError:
+            return (cover_url, temp_cover)
+        except click.Abort:
+            raise
 
 
 def _decode_inbuilt_quick(filepath: Path) -> dict:
@@ -1259,7 +1385,8 @@ def up(
                             )
                         else:
                             click.secho(
-                                f"Failed to download edited image URL: {edited_image}", fg="yellow"
+                                f"Failed to download edited image URL (missing/invalid): {edited_image}",
+                                fg="yellow",
                             )
                     if cover_scraper and not temp_cover:
                         tmp = _download_url_to_temp(cover_scraper)
@@ -1267,6 +1394,11 @@ def up(
                             temp_cover = tmp
                             click.secho(
                                 f"Downloaded cover from scraper: {cover_scraper}", fg="green"
+                            )
+                        else:
+                            click.secho(
+                                f"Failed to download scraper cover (missing/invalid): {cover_scraper}",
+                                fg="yellow",
                             )
                     if not temp_cover:
                         try:
@@ -1278,6 +1410,17 @@ def up(
                                 click.secho(f"Fallback DuckDuckGo cover: {dd_path}", fg="green")
                         except Exception:
                             pass
+                    if not temp_cover and not dry_run:
+                        try:
+                            manual = _prompt_manual_cover(
+                                metadata.get("title") or canonical_display,
+                                metadata.get("authors") or [],
+                                dry_run=dry_run,
+                            )
+                            if manual:
+                                temp_cover = manual
+                        except click.Abort:
+                            raise
                     if temp_cover:
                         try:
                             from simurg.images import get_uploader
@@ -1299,6 +1442,13 @@ def up(
                             "No cover found for pack. Continuing without image.", fg="yellow"
                         )
                         cover_url = None
+                    if cover_url and not dry_run:
+                        try:
+                            cover_url, temp_cover = _confirm_rehosted_cover(
+                                cover_url, temp_cover, cover_path=None, dry_run=dry_run
+                            )
+                        except click.Abort:
+                            raise
                     if temp_cover:
                         try:
                             Path(temp_cover).unlink(missing_ok=True)
@@ -2394,7 +2544,10 @@ def up(
                 temp_cover = tmp
                 click.secho(f"Downloaded cover (override): {cover}", fg="green")
             else:
-                click.secho(f"Failed to download override cover: {cover}", fg="yellow")
+                click.secho(
+                    f"Failed to download override cover (missing/invalid): {cover}",
+                    fg="yellow",
+                )
         # 2) Edited image via review menu [img] — manual URL override (rehost it)
         if edited_image and not temp_cover and edited_image.lower().startswith("http"):
             tmp = _download_url_to_temp(edited_image)
@@ -2402,7 +2555,10 @@ def up(
                 temp_cover = tmp
                 click.secho(f"Downloaded cover from edited image: {edited_image}", fg="green")
             else:
-                click.secho(f"Failed to download edited image URL: {edited_image}", fg="yellow")
+                click.secho(
+                    f"Failed to download edited image URL (missing/invalid): {edited_image}",
+                    fg="yellow",
+                )
         # 3) Scraper cover (best quality — always scrape per user decision)
         if cover_scraper and not temp_cover:
             tmp = _download_url_to_temp(cover_scraper)
@@ -2410,7 +2566,10 @@ def up(
                 temp_cover = tmp
                 click.secho(f"Downloaded cover from scraper: {cover_scraper}", fg="green")
             else:
-                click.secho(f"Failed to download scraper cover: {cover_scraper}", fg="yellow")
+                click.secho(
+                    f"Failed to download scraper cover (missing/invalid): {cover_scraper}",
+                    fg="yellow",
+                )
         # 4) DuckDuckGo fallback if no scraper cover
         if not temp_cover:
             try:
@@ -2430,8 +2589,25 @@ def up(
                 click.secho(f"DuckDuckGo fallback failed: {e}", fg="yellow")
         # 5) Embedded file cover as last resort
         if not temp_cover and cover_path and Path(cover_path).exists():
-            temp_cover = cover_path
-            click.secho(f"Using cover from file: {cover_path}", fg="green")
+            from simurg.images.validate import is_valid_cover
+
+            valid, reason = is_valid_cover(str(cover_path))
+            if valid:
+                temp_cover = cover_path
+                click.secho(f"Using cover from file: {cover_path}", fg="green")
+            else:
+                click.secho(f"Embedded cover invalid ({reason}), ignoring", fg="yellow")
+        if not temp_cover and not dry_run:
+            try:
+                manual = _prompt_manual_cover(
+                    metadata.get("title") or "",
+                    metadata.get("authors") or [],
+                    dry_run=dry_run,
+                )
+                if manual:
+                    temp_cover = manual
+            except click.Abort:
+                raise
 
         if temp_cover:
             # Always rehost via image host (download -> ptscreens/imgbb/catbox)
@@ -2458,6 +2634,13 @@ def up(
         else:
             click.secho("No cover found. Continuing without image.", fg="yellow")
             cover_url = None
+        if cover_url and not dry_run:
+            try:
+                cover_url, temp_cover = _confirm_rehosted_cover(
+                    cover_url, temp_cover, cover_path=cover_path, dry_run=dry_run
+                )
+            except click.Abort:
+                raise
 
         # Clean up downloaded temp cover (no longer needed after rehost)
         if temp_cover and temp_cover != cover_path:
