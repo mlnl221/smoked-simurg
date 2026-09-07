@@ -630,3 +630,52 @@ def test_libraryofcongress_search_url(monkeypatch):
     assert res["title"] == "The Dial"
     assert res["year"] == 1920
     assert res["publisher"] == "J. M. Bowles"
+
+
+def test_openlibrary_search_url_ignores_title_slug(monkeypatch):
+    sc = OpenLibraryScraper()
+    olid = "OL4437227M"
+    seen = []
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        seen.append(url)
+        if url.endswith("/editions.json"):
+            return DummyResponse({"entries": [{"title": "Catch me if you can"}]})
+        return DummyResponse({"title": "Catch me if you can"})
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    res = sc.search_url(f"https://openlibrary.org/books/{olid}/Catch_me_if_you_can")
+    assert res["title"] == "Catch me if you can"
+    assert seen == [f"https://openlibrary.org/books/{olid}.json"]
+    # works slug too
+    res = sc.search_url("https://openlibrary.org/works/OL4494335W/Catch_Me_If_You_Can")
+    assert res["title"] == "Catch me if you can"
+
+
+def test_bookbrainz_search_url_ignores_trailing_slug(monkeypatch):
+    sc = BookBrainzScraper()
+    bbid = "fb7d0a29-e03a-4d53-81ce-25c2712d4845"
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        if "/identifiers" in url:
+            return DummyResponse(BB_IDENTS)
+        return DummyResponse(BB_EDITION)
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    res = sc.search_url(f"https://bookbrainz.org/edition/{bbid}/some-title")
+    assert res["title"] == "Dune"
+
+
+def test_internetarchive_search_url_ignores_deep_link(monkeypatch):
+    from simurg.metadata.scrapers.internetarchive import InternetArchiveScraper
+
+    sc = InternetArchiveScraper()
+    ident = "some-magazine-1923"
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        assert url == f"https://archive.org/metadata/{ident}"
+        return DummyResponse({"metadata": {"title": "Wireless Age", "date": "1923-05"}})
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    res = sc.search_url(f"https://archive.org/details/{ident}/page/n1/mode/2up")
+    assert res["title"] == "Wireless Age"

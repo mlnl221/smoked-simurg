@@ -103,7 +103,8 @@ class InternetArchiveScraper(BaseScraper):
             path = (urlparse(url).path or "").rstrip("/")
         except Exception:
             return None
-        m = re.search(r"/(?:details|metadata)/([^/]+)$", path)
+        # Identifier is the first segment; ignore deep links (/details/<id>/page/...)
+        m = re.search(r"/(?:details|metadata)/([^/]+)", path)
         if not m:
             return None
         ident = m.group(1)
