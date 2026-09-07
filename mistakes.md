@@ -62,3 +62,8 @@ This file records past failures for this project. Agents must read it before sta
 - **Why it happened**: `simurg/uploader/payload.py:217` / `:258` passed `metadata["issue_date"]` straight through. Internally magazines store month-precision as `YYYY-MM` and year-precision as `YYYY` (`metadata/magazine.py`, `scrapers/util.py:normalize_issue_date`), but Simurg's `upload.php` validates strictly `YYYY-MM-DD` regardless of `magazine_issue_date_precision`. Tests in `tests/test_magazine.py:263,322` also asserted the unpadded `2020-06`.
 - **How to avoid next time**: Always pad magazine `issue_date` in the payload layer to `YYYY-MM-DD` (`YYYY-MM` → `YYYY-MM-01`, `YYYY` → `YYYY-01-01`) while keeping `magazine_issue_date_precision` as the true precision. Add helper `_magazine_issue_date_for_payload()` in `payload.py` and use it in both `compile_data_new_magazine` and `compile_data_existing_magazine`.
 
+### 2026-09-07
+- **What happened**: Ran unscoped `rg` for 32-hex secrets and printed live `config.toml` values (passkey announce URL, image/scraper keys) into tool output during a secrets audit.
+- **Why it happened**: Pattern matched the local gitignored `config.toml`; output not masked.
+- **How to avoid next time**: Never `rg`/`cat` `config.toml` unmasked. Scope secret scans to tracked files (`git grep`) and verify `config.toml` presence only via masked key-length checks.
+
