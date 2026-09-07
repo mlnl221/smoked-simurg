@@ -46,13 +46,25 @@ def fetch_duckduckgo_cover(
                                 b"<!DO",
                                 b"<htm",
                             ):
+                                from simurg.images.validate import MIN_COVER_BYTES, is_valid_cover
+
+                                if len(img_resp.content) < MIN_COVER_BYTES:
+                                    return None
                                 ext = ".jpg"
                                 ctype = img_resp.headers.get("Content-Type", "")
+                                if ctype and not ctype.startswith("image/"):
+                                    return None
                                 if "png" in ctype:
                                     ext = ".png"
                                 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
                                 tmp.write(img_resp.content)
                                 tmp.close()
+                                valid, _reason = is_valid_cover(tmp.name)
+                                if not valid:
+                                    import os
+
+                                    os.unlink(tmp.name)
+                                    return None
                                 return tmp.name
                 except Exception:
                     pass
