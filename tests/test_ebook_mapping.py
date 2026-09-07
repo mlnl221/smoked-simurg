@@ -1,6 +1,6 @@
 """Validate ebook path vs docs/ebook.txt field mapping.
 
-See docs/ebook.txt §4–§12, §5 Tags, §7 Language/Publisher/ISBN/Page,
+See docs/ebook.txt §4-§12, §5 Tags, §7 Language/Publisher/ISBN/Page,
 §3 Contributors, §12 Publication vs Release decision rule.
 
 Four critical fields:
