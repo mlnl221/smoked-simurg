@@ -180,3 +180,19 @@ def test_build_release_desc_with_extra_urls():
     desc = build_release_desc(md, source_urls=["https://b.com"])
     assert "https://a.com" in desc
     assert "https://b.com" in desc
+
+
+def test_tags_list_joined_to_single_string():
+    md = {"title": "T", "tags": ["fiction", "american", "west"]}
+    data = compile_data_new_publication(md, None)
+    assert data["tags"] == "fiction, american, west"
+    data2 = compile_data_existing_publication(1, md, None)
+    assert data2["tags"] == "fiction, american, west"
+
+
+def test_tags_string_passthrough_and_empty():
+    assert compile_data_new_publication({"title": "T"}, None)["tags"] == ""
+    md = {"title": "T", "tags": "fantasy, sci.fi"}
+    assert compile_data_new_publication(md, None)["tags"] == "fantasy, sci.fi"
+    md = {"title": "T", "tags": ["fiction", " ", "west"]}
+    assert compile_data_new_publication(md, None)["tags"] == "fiction, west"
