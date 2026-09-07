@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import clean_issn
 
@@ -94,7 +95,7 @@ class OpenAlexScraper(BaseScraper):
         try:
             url = "https://api.openalex.org/sources"
             params = {"search": title, "api_key": api_key, "per_page": 10}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             data = r.json()
@@ -184,7 +185,7 @@ class OpenAlexScraper(BaseScraper):
             return None
         try:
             api_url = f"https://api.openalex.org/sources/{sid}"
-            r = self.session.get(api_url, params={"api_key": api_key}, timeout=10)
+            r = self.session.get(api_url, params={"api_key": api_key}, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             data = r.json()

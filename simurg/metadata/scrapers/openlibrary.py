@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 
@@ -21,25 +22,38 @@ class OpenLibraryScraper(BaseScraper):
             # books API
             url = "https://openlibrary.org/api/books"
             params = {"bibkeys": f"ISBN:{cleaned}", "format": "json", "jscmd": "data"}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code == 200:
                 data = r.json()
                 entry = data.get(f"ISBN:{cleaned}")
                 if entry:
                     return self._parse_entry(entry, cleaned)
-            # fallback search.json
+            # fallback search.json — docs carry *work*-level first_publish_year
             url2 = "https://openlibrary.org/search.json"
-            r2 = self.session.get(url2, params={"isbn": cleaned}, timeout=10)
+            r2 = self.session.get(url2, params={"isbn": cleaned}, timeout=SCRAPER_TIMEOUT)
             if r2.status_code == 200:
                 docs = r2.json().get("docs", [])
                 if docs:
                     d = docs[0]
+                    # Edition year not reliably available here; use first_publish_year
+                    # as Publication-level field only (see docs/ebook.txt §3 / §4).
+                    fpy = d.get("first_publish_year")
+                    # Try edition year from publish_year array if present, else None
+                    pub_y = None
+                    if d.get("publish_year"):
+                        try:
+                            py_list = d.get("publish_year") or []
+                            if py_list:
+                                pub_y = int(py_list[0])
+                        except Exception:
+                            pub_y = None
                     return {
                         "title": d.get("title"),
                         "authors": d.get("author_name", []),
                         "publisher": (d.get("publisher") or [None])[0],
-                        "year": d.get("first_publish_year"),
-                        "publish_year": d.get("first_publish_year"),
+                        "year": pub_y,
+                        "publish_year": pub_y,
+                        "first_publish_year": fpy,
                         "page_count": d.get("number_of_pages_median"),
                         "isbn": cleaned,
                         "language": (d.get("language") or [None])[0],
@@ -61,19 +75,29 @@ class OpenLibraryScraper(BaseScraper):
         try:
             url = "https://openlibrary.org/search.json"
             params = {"q": q, "limit": 5}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code == 200:
                 docs = r.json().get("docs", [])
                 if docs:
                     d = docs[0]
                     isbn = (d.get("isbn") or [None])[0]
                     cleaned = re.sub(r"[^0-9Xx]", "", isbn) if isbn else None
+                    fpy = d.get("first_publish_year")
+                    pub_y = None
+                    if d.get("publish_year"):
+                        try:
+                            py_list = d.get("publish_year") or []
+                            if py_list:
+                                pub_y = int(py_list[0])
+                        except Exception:
+                            pub_y = None
                     return {
                         "title": d.get("title"),
                         "authors": d.get("author_name", []),
                         "publisher": (d.get("publisher") or [None])[0],
-                        "year": d.get("first_publish_year"),
-                        "publish_year": d.get("first_publish_year"),
+                        "year": pub_y,
+                        "publish_year": pub_y,
+                        "first_publish_year": fpy,
                         "page_count": d.get("number_of_pages_median"),
                         "isbn": cleaned,
                         "language": (d.get("language") or [None])[0],
@@ -94,7 +118,7 @@ class OpenLibraryScraper(BaseScraper):
         """Magazine-aware query: best-effort catalogue metadata for a periodical."""
         try:
             url = "https://openlibrary.org/search.json"
-            r = self.session.get(url, params={"q": title, "limit": 3}, timeout=10)
+            r = self.session.get(url, params={"q": title, "limit": 3}, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             for d in r.json().get("docs", []):
@@ -161,6 +185,7 @@ class OpenLibraryScraper(BaseScraper):
             "publisher": publisher,
             "year": year,
             "publish_year": year,
+            "first_publish_year": None,
             "page_count": entry.get("number_of_pages"),
             "isbn": isbn,
             "language": None,
@@ -199,7 +224,9 @@ class OpenLibraryScraper(BaseScraper):
             return self._fetch_book_json(olid)
         # works -> first edition
         try:
-            r = self.session.get(f"https://openlibrary.org/works/{olid}/editions.json", timeout=10)
+            r = self.session.get(
+                f"https://openlibrary.org/works/{olid}/editions.json", timeout=SCRAPER_TIMEOUT
+            )
             if r.status_code != 200:
                 return None
             entries = (r.json().get("entries") or [])[:1]
@@ -213,7 +240,9 @@ class OpenLibraryScraper(BaseScraper):
 
     def _fetch_book_json(self, olid: str) -> dict | None:
         try:
-            r = self.session.get(f"https://openlibrary.org/books/{olid}.json", timeout=10)
+            r = self.session.get(
+                f"https://openlibrary.org/books/{olid}.json", timeout=SCRAPER_TIMEOUT
+            )
             if r.status_code != 200:
                 return None
             return self._parse_edition_json(r.json())
@@ -275,6 +304,7 @@ class OpenLibraryScraper(BaseScraper):
             "publisher": publisher,
             "year": year,
             "publish_year": year,
+            "first_publish_year": None,
             "page_count": page_count,
             "isbn": isbn,
             "language": None,

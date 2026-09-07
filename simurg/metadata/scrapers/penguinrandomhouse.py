@@ -29,6 +29,7 @@ import requests
 from bs4 import BeautifulSoup
 from ratelimit import RateLimitException, limits, sleep_and_retry
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 _PRH_HEADERS = {
@@ -66,7 +67,9 @@ class PenguinRandomHouseScraper(BaseScraper):
         """Rate-limited GET; retries politely on 429/503."""
         for attempt in range(3):
             try:
-                r = self.session.get(url, params=params, timeout=15, allow_redirects=True)
+                r = self.session.get(
+                    url, params=params, timeout=SCRAPER_TIMEOUT, allow_redirects=True
+                )
             except RateLimitException:
                 raise
             except Exception:
@@ -194,6 +197,7 @@ class PenguinRandomHouseScraper(BaseScraper):
                 "publisher": None,
                 "year": None,
                 "publish_year": None,
+                "first_publish_year": None,
                 "page_count": None,
                 "isbn": None,
                 "language": None,
@@ -209,6 +213,7 @@ class PenguinRandomHouseScraper(BaseScraper):
             year = _extract_year(pub_date)
             fallback["year"] = year
             fallback["publish_year"] = year
+            fallback["first_publish_year"] = None
             pages = details.get("Pages")
             if pages and pages.isdigit():
                 fallback["page_count"] = int(pages)
@@ -291,6 +296,7 @@ def _data_from_book_entity(entity: dict, block: dict, url: str) -> dict:
         "publisher": publisher,
         "year": year,
         "publish_year": year,
+        "first_publish_year": None,
         "page_count": entity.get("numberOfPages"),
         "isbn": isbn or None,
         "language": entity.get("inLanguage"),
@@ -448,6 +454,7 @@ def _data_from_api(api: dict, page_url: str | None) -> dict:
         "publisher": imprint.get("name"),
         "year": year,
         "publish_year": year,
+        "first_publish_year": None,
         "page_count": api.get("totalPages"),
         "isbn": isbn or None,
         "language": None,

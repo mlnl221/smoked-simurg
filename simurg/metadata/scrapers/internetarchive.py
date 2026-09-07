@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import date_precision, normalize_issue_date
 
@@ -48,7 +49,7 @@ class InternetArchiveScraper(BaseScraper):
                 "output": "json",
                 "rows": 5,
             }
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             docs = r.json().get("response", {}).get("docs", [])
@@ -107,7 +108,7 @@ class InternetArchiveScraper(BaseScraper):
             return None
         ident = m.group(1)
         try:
-            r = self.session.get(f"https://archive.org/metadata/{ident}", timeout=10)
+            r = self.session.get(f"https://archive.org/metadata/{ident}", timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             data = r.json()

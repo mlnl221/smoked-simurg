@@ -454,6 +454,8 @@ def test_cli_up_field_merge_skipped_when_no_missing(tmp_path, monkeypatch):
                 "title": "Test Book",
                 "authors": ["Author A"],
                 "year": 2020,
+                "publish_year": 2020,
+                "first_publish_year": 2020,
                 "publisher": "Ace",
                 "_scraper": "openlibrary",
                 "_fuzzy_title": 1.0,

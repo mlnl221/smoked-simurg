@@ -7,6 +7,8 @@ import tempfile
 
 import requests
 
+from simurg.constants import SCRAPER_TIMEOUT
+
 
 def fetch_duckduckgo_cover(
     title: str, authors: list[str], session: requests.Session | None = None
@@ -21,7 +23,7 @@ def fetch_duckduckgo_cover(
         url = "https://duckduckgo.com/"
         params = {"q": query}
         headers = {"User-Agent": "simurg/0.1.0"}
-        r = session.get(url, params=params, headers=headers, timeout=10)
+        r = session.get(url, params=params, headers=headers, timeout=SCRAPER_TIMEOUT)
         # Try to extract vqd token if needed, but simpler: use html scrape for image urls
         # Fallback: directly search via duckduckgo image i.js
         # Get token
@@ -30,7 +32,7 @@ def fetch_duckduckgo_cover(
         if vqd:
             img_url = "https://duckduckgo.com/i.js"
             params2 = {"l": "wt-wt", "o": "json", "q": query, "vqd": vqd, "f": ",,,", "p": "1"}
-            r2 = session.get(img_url, params=params2, headers=headers, timeout=10)
+            r2 = session.get(img_url, params=params2, headers=headers, timeout=SCRAPER_TIMEOUT)
             if r2.status_code == 200:
                 try:
                     data = r2.json()
@@ -39,7 +41,7 @@ def fetch_duckduckgo_cover(
                         image = results[0].get("image")
                         if image:
                             # download image
-                            img_resp = session.get(image, headers=headers, timeout=10)
+                            img_resp = session.get(image, headers=headers, timeout=SCRAPER_TIMEOUT)
                             if img_resp.status_code == 200 and img_resp.content[:4] not in (
                                 b"<!DO",
                                 b"<htm",

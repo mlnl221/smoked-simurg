@@ -29,6 +29,7 @@ from urllib.parse import urlencode, urljoin, urlparse
 from bs4 import BeautifulSoup
 from ratelimit import limits, sleep_and_retry
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import (
     clean_issn,
@@ -73,7 +74,7 @@ class WonderClubScraper(BaseScraper):
     @limits(_CALLS, _PERIOD)
     def _get(self, url: str, params=None):
         try:
-            r = self.session.get(url, params=params, timeout=15)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
         except Exception:
             return None
         if r is None or r.status_code != 200:
@@ -637,6 +638,7 @@ def _parse_page(html: str, url: str) -> dict | None:
         "authors": authors,
         "year": year,
         "publish_year": year,
+        "first_publish_year": year,
         "first_published": year,
         "publisher": publisher or None,
         "isbn": isbn,
