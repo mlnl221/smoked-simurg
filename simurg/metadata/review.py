@@ -154,10 +154,10 @@ def _edit_list(metadata: dict, key: str, editor: str) -> None:
 
 def _edit_years(metadata: dict, editor: str) -> None:
     while True:
-        text = (
-            f"Year         : {metadata.get('year') or ''}\n"
-            f"Remaster Year: {metadata.get('remaster_year') or ''}"
-        )
+        # Pre-fill empty Year from remaster_year so saving the buffer accepts
+        # the edition year explicitly. Never copies silently into the store.
+        year = metadata.get("year") or metadata.get("remaster_year") or ""
+        text = f"Year         : {year}\nRemaster Year: {metadata.get('remaster_year') or ''}"
         text = click.edit(text, editor=editor)
         if text is None:
             return
