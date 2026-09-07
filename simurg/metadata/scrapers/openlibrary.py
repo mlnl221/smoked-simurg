@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 
@@ -21,7 +22,7 @@ class OpenLibraryScraper(BaseScraper):
             # books API
             url = "https://openlibrary.org/api/books"
             params = {"bibkeys": f"ISBN:{cleaned}", "format": "json", "jscmd": "data"}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code == 200:
                 data = r.json()
                 entry = data.get(f"ISBN:{cleaned}")
@@ -29,7 +30,7 @@ class OpenLibraryScraper(BaseScraper):
                     return self._parse_entry(entry, cleaned)
             # fallback search.json — docs carry *work*-level first_publish_year
             url2 = "https://openlibrary.org/search.json"
-            r2 = self.session.get(url2, params={"isbn": cleaned}, timeout=10)
+            r2 = self.session.get(url2, params={"isbn": cleaned}, timeout=SCRAPER_TIMEOUT)
             if r2.status_code == 200:
                 docs = r2.json().get("docs", [])
                 if docs:
@@ -74,7 +75,7 @@ class OpenLibraryScraper(BaseScraper):
         try:
             url = "https://openlibrary.org/search.json"
             params = {"q": q, "limit": 5}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code == 200:
                 docs = r.json().get("docs", [])
                 if docs:
@@ -117,7 +118,7 @@ class OpenLibraryScraper(BaseScraper):
         """Magazine-aware query: best-effort catalogue metadata for a periodical."""
         try:
             url = "https://openlibrary.org/search.json"
-            r = self.session.get(url, params={"q": title, "limit": 3}, timeout=10)
+            r = self.session.get(url, params={"q": title, "limit": 3}, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             for d in r.json().get("docs", []):
@@ -223,7 +224,9 @@ class OpenLibraryScraper(BaseScraper):
             return self._fetch_book_json(olid)
         # works -> first edition
         try:
-            r = self.session.get(f"https://openlibrary.org/works/{olid}/editions.json", timeout=10)
+            r = self.session.get(
+                f"https://openlibrary.org/works/{olid}/editions.json", timeout=SCRAPER_TIMEOUT
+            )
             if r.status_code != 200:
                 return None
             entries = (r.json().get("entries") or [])[:1]
@@ -237,7 +240,9 @@ class OpenLibraryScraper(BaseScraper):
 
     def _fetch_book_json(self, olid: str) -> dict | None:
         try:
-            r = self.session.get(f"https://openlibrary.org/books/{olid}.json", timeout=10)
+            r = self.session.get(
+                f"https://openlibrary.org/books/{olid}.json", timeout=SCRAPER_TIMEOUT
+            )
             if r.status_code != 200:
                 return None
             return self._parse_edition_json(r.json())

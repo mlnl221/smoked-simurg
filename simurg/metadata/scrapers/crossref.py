@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import clean_issn
 
@@ -20,7 +21,7 @@ class CrossrefScraper(BaseScraper):
         try:
             url = "https://api.crossref.org/works"
             params = {"query.bibliographic": title, "rows": 5, "filter": "type:journal"}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             items = r.json().get("message", {}).get("items", [])

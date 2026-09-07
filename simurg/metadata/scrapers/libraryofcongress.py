@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import year_from
 
@@ -21,7 +22,7 @@ class LibraryOfCongressScraper(BaseScraper):
         try:
             url = "https://www.loc.gov/books/"
             params = {"q": title, "fo": "json", "c": 5}
-            r = self.session.get(url, params=params, timeout=10)
+            r = self.session.get(url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             results = r.json().get("results") or []
@@ -69,7 +70,7 @@ class LibraryOfCongressScraper(BaseScraper):
             return None
         target = url.split("?")[0].rstrip("/") + "?fo=json"
         try:
-            r = self.session.get(target, timeout=10)
+            r = self.session.get(target, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             res = r.json()

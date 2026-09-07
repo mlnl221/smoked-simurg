@@ -10,6 +10,7 @@ import re
 
 from bs4 import BeautifulSoup
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 
@@ -33,7 +34,7 @@ class BookBrainzScraper(BaseScraper):
             r = self.session.get(
                 f"{self.api_base}/search",
                 params={"q": query, "type": "edition", "page": 1, "size": 5},
-                timeout=10,
+                timeout=SCRAPER_TIMEOUT,
             )
             if r.status_code != 200:
                 return None
@@ -49,7 +50,7 @@ class BookBrainzScraper(BaseScraper):
 
     def _lookup_edition(self, bbid: str, fallback_title: str | None = None) -> dict | None:
         try:
-            r = self.session.get(f"{self.api_base}/edition/{bbid}", timeout=10)
+            r = self.session.get(f"{self.api_base}/edition/{bbid}", timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             data = r.json()
@@ -76,7 +77,9 @@ class BookBrainzScraper(BaseScraper):
                 publisher = pub.get("name")
             isbn = None
             try:
-                r2 = self.session.get(f"{self.api_base}/edition/{bbid}/identifiers", timeout=10)
+                r2 = self.session.get(
+                    f"{self.api_base}/edition/{bbid}/identifiers", timeout=SCRAPER_TIMEOUT
+                )
                 if r2.status_code == 200:
                     for ident in r2.json().get("identifiers") or []:
                         if ident.get("type") in ("ISBN-13", "ISBN-10") and ident.get("value"):
@@ -105,7 +108,7 @@ class BookBrainzScraper(BaseScraper):
     def _scrape_cover(self, bbid: str) -> str | None:
         """Fetch the edition HTML page and extract the cover image URL."""
         try:
-            r = self.session.get(f"https://bookbrainz.org/edition/{bbid}", timeout=10)
+            r = self.session.get(f"https://bookbrainz.org/edition/{bbid}", timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             soup = BeautifulSoup(r.text, "html.parser")
@@ -141,7 +144,7 @@ class BookBrainzScraper(BaseScraper):
             return self._lookup_edition(bbid)
         # work/book -> fetch first edition
         try:
-            r = self.session.get(f"{self.api_base}/{kind}/{bbid}/editions", timeout=10)
+            r = self.session.get(f"{self.api_base}/{kind}/{bbid}/editions", timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             editions = (r.json().get("editions") or [])[:1]

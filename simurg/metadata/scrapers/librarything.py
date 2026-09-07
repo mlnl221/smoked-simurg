@@ -30,6 +30,7 @@ from xml.etree import ElementTree as ET
 
 from ratelimit import limits, sleep_and_retry
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.util import (
     clean_issn,
@@ -69,7 +70,7 @@ class LibraryThingScraper(BaseScraper):
             r = self.session.get(
                 _TALPA_URL,
                 params={"token": self._token, "search": query.strip(), "limit": limit},
-                timeout=15,
+                timeout=SCRAPER_TIMEOUT,
             )
             if r.status_code != 200:
                 return []
@@ -90,7 +91,7 @@ class LibraryThingScraper(BaseScraper):
                     "id": str(work_id),
                     "apikey": self._token,
                 },
-                timeout=15,
+                timeout=SCRAPER_TIMEOUT,
             )
             if r.status_code != 200:
                 return {}

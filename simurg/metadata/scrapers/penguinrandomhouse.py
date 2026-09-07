@@ -29,6 +29,7 @@ import requests
 from bs4 import BeautifulSoup
 from ratelimit import RateLimitException, limits, sleep_and_retry
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 _PRH_HEADERS = {
@@ -66,7 +67,9 @@ class PenguinRandomHouseScraper(BaseScraper):
         """Rate-limited GET; retries politely on 429/503."""
         for attempt in range(3):
             try:
-                r = self.session.get(url, params=params, timeout=15, allow_redirects=True)
+                r = self.session.get(
+                    url, params=params, timeout=SCRAPER_TIMEOUT, allow_redirects=True
+                )
             except RateLimitException:
                 raise
             except Exception:

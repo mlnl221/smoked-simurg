@@ -25,6 +25,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from ratelimit import RateLimitException, limits, sleep_and_retry
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 # Browser-like headers to avoid the AbeBooks bot wall.
@@ -63,7 +64,9 @@ class AbeBooksScraper(BaseScraper):
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                r = self.session.get(url, params=params, timeout=15, allow_redirects=True)
+                r = self.session.get(
+                    url, params=params, timeout=SCRAPER_TIMEOUT, allow_redirects=True
+                )
             except RateLimitException:
                 raise  # let sleep_and_retry handle the wait
             except Exception as e:  # network blip

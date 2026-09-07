@@ -51,6 +51,9 @@ CANONICAL_STRIP_RE = re.compile(
 # Type enum — Simurg upload form type for ebooks
 UPLOAD_TYPE = "E-Book"
 
+# Per-request HTTP timeout (seconds) for all metadata scrapers.
+SCRAPER_TIMEOUT = 6
+
 # Consistent output symbols (docs/ux-improvements.md §3.3)
 OK_SYMBOL = click.style("✓", fg="green")
 FAIL_SYMBOL = click.style("✗", fg="red")

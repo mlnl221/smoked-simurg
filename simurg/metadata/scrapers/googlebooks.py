@@ -15,6 +15,7 @@ import json
 import re
 from difflib import SequenceMatcher
 
+from simurg.constants import SCRAPER_TIMEOUT
 from simurg.metadata.scrapers.base import BaseScraper
 
 _API = "https://www.googleapis.com/books/v1/volumes"
@@ -84,7 +85,7 @@ class GoogleBooksScraper(BaseScraper):
             params["key"] = self._api_key()
         for attempt in range(2):
             try:
-                r = self.session.get(_API, params=params, timeout=10)
+                r = self.session.get(_API, params=params, timeout=SCRAPER_TIMEOUT)
             except Exception:
                 return []
             if r.status_code == 200:
@@ -149,7 +150,7 @@ class GoogleBooksScraper(BaseScraper):
     def _viewapi_volume(self, cleaned: str) -> dict | None:
         try:
             params = {"jscmd": "viewapi", "bibkeys": f"ISBN:{cleaned}"}
-            r = self.session.get(_VIEWAPI, params=params, timeout=10)
+            r = self.session.get(_VIEWAPI, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             # The endpoint returns JavaScript: "var _GBSBookInfo = {...};"
@@ -284,7 +285,7 @@ class GoogleBooksScraper(BaseScraper):
                     params["key"] = str(api_key)
             except Exception:
                 pass
-            r = self.session.get(api_url, params=params, timeout=10)
+            r = self.session.get(api_url, params=params, timeout=SCRAPER_TIMEOUT)
             if r.status_code != 200:
                 return None
             vi = r.json().get("volumeInfo", {})
