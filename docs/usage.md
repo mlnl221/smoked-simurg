@@ -25,18 +25,20 @@ make run DIR=./my-batch ARGS="--dry-run"     # dry run — full flow, no upload 
 
 ## `up` options
 
-From `simurg/cli.py:648-672` (`up --help`):
+From `up --help` (`simurg/cli.py:925-965`):
 
 | Flag | Meaning |
 |---|---|
-| `--dry-run` | Full flow (staging, cover rehost, `.torrent` generation, prompts, `.cache` reuse) but skips the final upload POST |
-| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `.cache` exact-title reuse → `OpenAlex` (ISSN/ISSN-L) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `OpenLibrary` / `LibraryThing` / `WonderClub` (and `MAGAZINE_EXTENSIONS` `PDF/CBR/CBZ/DJVU`) |
-| `--source {Retail,Scan,OCR,Convert,Other}` | Source label. Never guessed — defaults to `Other` when unset (`cli.py:1138-1140`) |
-| `--group-id ID` | Force upload to existing Publication `publicationid` |
-| `--cover URL` | Override cover URL (skips scraper/file cover) |
-| `--url URL` | Paste a book-page URL (openlibrary/googlebooks/bookbrainz/abebooks/archive.org/loc/openalex/wonderclub) — routed to matching scraper, skipping auto search (`enricher.py:85-108`, `magazine_issn.py`) |
+| `--dry-run` | Full flow (staging, cover rehost, `.torrent` generation, prompts, `.cache` reuse) but skips the final upload POST. Cover prompts (manual URL, rehost preview) are skipped — dry-run never blocks on cover input |
+| `--category {ebooks,magazines}` | Category (default `ebooks`). Selects scraper + payload path; magazines use `.cache` publisher-keyed reuse → `OpenAlex` (ISSN/ISSN-L) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `LibraryThing` / `WonderClub` (and `MAGAZINE_EXTENSIONS` `PDF/CBR/CBZ/DJVU`). Note: `OpenLibrary` is ebook-only |
+| `--source {Retail,Scan,OCR,Convert,Other}` | Source label. Never guessed — defaults to `Other` when unset |
+| `--format {...}` | Override format (ebooks: `PDF/EPUB/MOBI/AZW3/DJVU`; magazines: `PDF/CBR/CBZ/DJVU`). Overwrites scraped/file value |
+| `--language {English,Japanese,Turkish}` | Override language. Overwrites scraped/file value |
+| `--group-id ID` | Force upload to existing Publication `publicationid` (Publication id from `torrents.php?action=publication&id=PID`, not the torrent group id) |
+| `--cover URL` | Override cover URL, top cover priority (downloaded, validated, rehosted like any other source) |
+| `--url URL` | Paste a book-page URL (`openlibrary.org`, `books.google.com`/`googleapis.com`, `bookbrainz.org`, `abebooks.com`, `penguinrandomhouse.com`, `librarything.com`, `wonderclub.com`, `archive.org`, `loc.gov`, `openalex.org`/`api.openalex.org`) — routed to matching scraper, skipping auto search. Trailing title slugs accepted |
 | `--no-rename` | Skip filename sanitize/staging |
-| `--no-review` | Skip interactive editor metadata review (`cli.py:1206`) |
+| `--no-review` | Skip interactive editor metadata review |
 
 ## What `up` does per file
 
@@ -49,7 +51,7 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 
 3. **Query scrapers — fresh, no generic cache** (`enricher.py:11-161`, `uploader/magazine_issn.py`).
    - Ebooks: `OpenLibrary`, `GoogleBooks`, `BookBrainz`, `AbeBooks`, `PenguinRandomHouse`, `LibraryThing`, `WonderClub` (`enricher.py:56-67`).
-   - Magazines: `.cache/magazine_issns.csv` exact-title reuse (if seen before) → `OpenAlex` (ISSN/ISSN-L via `/sources`, needs `openalex_api_key`) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `OpenLibrary` / `LibraryThing` / `WonderClub` (WonderClub also handles `/magazines/*` URLs). All except `.cache` are always fresh.
+    - Magazines: `.cache/magazine_issns.csv` publisher-keyed reuse (if seen before) → `OpenAlex` (ISSN/ISSN-L via `/sources`, needs `openalex_api_key`) → `InternetArchive` / `LibraryOfCongress` / `Crossref` / `LibraryThing` / `WonderClub` (WonderClub also handles `/magazines/*` URLs). All except `.cache` are always fresh.
    - Strategy: ISBN search first when ISBN present; if no confident hit (`_fuzzy_title >=0.8` or `_fuzzy_author >=0.8`) also search `title+author` and show all hits. 10-result-style prompt when multiple hits. For magazines `WonderClub`/`LibraryThing` correctly parse volume/issue fallback.
 
 4. **Interactive picker** (`cli.py:408-460`, `1002-1048`).
@@ -68,8 +70,9 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 8. **Dupe search** (`cli.py:1600+`, `uploader/dupe.py`).
    - Builds search strings from title/authors/ISBN (`generate_dupe_search_strs`), calls `check_existing_group` (Simurg `browse`/`publication` API, fuzzy 0.85 auto-select). Prompt: upload to existing Publication or create new. `--group-id` bypasses search (validated via `GET /upload.php?publicationid=<id>`). Optionally checks open requests (`uploader/requests.py`). Dry-run still prompts; tracker-less dry-run skips it.
 
-9. **Cover handling** (`cli.py:1650+`, `images/`).
-   - Priority: `--cover` → `cover_url_scraper` → embedded `cover_path` → DuckDuckGo fallback (`cover_fallback_duckduckgo`). Downloads, downscales to ~500×500, converts PNG→JPG via `Pillow`, rehosts via `ptscreens`/`imgbb`/`catbox` (`images/ptscreens.py`, `imgbb.py`, `catbox.py`). Never hotlinks source URLs.
+9. **Cover handling** (`images/`, `images/validate.py`).
+    - Priority: `--cover` → edited `[img]` image URL (review menu) → `cover_url_scraper` → DuckDuckGo fallback (`cover_fallback_duckduckgo`, default true) → embedded `cover_path` (ebooks only, validated). Downloads, validates (`Content-Type: image/*`, ≥5 KB, `Pillow` parse, ≥100×100 px — placeholders fail through to the next source), downscales to ~500×500, converts PNG→JPG via `Pillow`, rehosts via `ptscreens`/`imgbb`/`catbox` (`images/ptscreens.py`, `imgbb.py`, `catbox.py`). Never hotlinks source URLs.
+    - Interactive guards (skipped in `--dry-run`): all sources failed → paste-a-cover-URL prompt (re-validated, `[s]` skip / `[a]` abort); after rehost → preview-confirm loop on the printed link (`[Enter]` keep, `[u]` replacement URL re-downloaded + re-hosted, `[s]` drop cover, `[a]` abort).
 
 10. **Stage/rename** (`cli.py:1750+`, `images/base.py`).
     - Unless `--no-rename`, sanitizes blacklisted chars (`constants.py:8`, `BLACKLISTED_CHARS`) and moves to `staging_dir` (falls back `upload_directory` → `.staging`) as `{Title} - {Author} (year) [ISBN].ext` (magazines: `{Title} - {Issue label} (year).ext` via `magazine_issue_label`).
@@ -85,6 +88,6 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 
 ## Tips
 
-- Always `make checkconf` after editing `config.toml` (also probes `OpenAlex` ISSN and `WonderClub`/`LibraryThing` reachability).
+- Always `make checkconf` after editing `config.toml` (probes `openlibrary`/`googlebooks`/`bookbrainz`/`abebooks` plus `openalex` when keyed; other scrapers report `SKIPPED`).
 - Use `ARGS="--dry-run"` to rehearse prompts, cover rehost, and inspect `config.directory.dottorrents_dir/.torrent` before real uploads (dry-run still uses `.cache` and auto-applies first Simurg candidate).
 - Keep `config.toml`, `.torrents/`, `.books/`, `.staging/`, `.cache/`, `*.torrent` out of git (all gitignored). `.cache/magazine_issns.csv` is safe to delete — it will be rebuilt.
