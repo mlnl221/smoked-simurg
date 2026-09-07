@@ -1180,7 +1180,7 @@ def up(
                     # [review] Interactive metadata review for packs (user request): let the
                     # user correct Publication / release / coverage metadata before upload,
                     # even for Year/Decade packs. Mirrors the individual-issue review
-                    # (cli.py:2106). review_metadata itself also guards non-TTY / dry-run.
+                    # (cli.py:2239). review_metadata guards non-TTY (still prompts in --dry-run when TTY).
                     if not no_review:
                         try:
                             from simurg.metadata.review import review_metadata
@@ -1240,14 +1240,27 @@ def up(
                         click.echo(f"  ... ({len(pack_files)} issues total)")
 
                     # Cover handling — same as individual: scraper cover -> fallback -> none
+                    # Priority: --cover > edited image (review [img]) > scraper > DuckDuckGo
                     cover_url = None
                     cover_scraper = metadata.get("cover_url_scraper")
+                    edited_image = (metadata.get("image") or "").strip()
                     temp_cover = None
                     if cover and not temp_cover:
                         tmp = _download_url_to_temp(cover)
                         if tmp:
                             temp_cover = tmp
                             click.secho(f"Downloaded cover (override): {cover}", fg="green")
+                    if edited_image and not temp_cover and edited_image.lower().startswith("http"):
+                        tmp = _download_url_to_temp(edited_image)
+                        if tmp:
+                            temp_cover = tmp
+                            click.secho(
+                                f"Downloaded cover from edited image: {edited_image}", fg="green"
+                            )
+                        else:
+                            click.secho(
+                                f"Failed to download edited image URL: {edited_image}", fg="yellow"
+                            )
                     if cover_scraper and not temp_cover:
                         tmp = _download_url_to_temp(cover_scraper)
                         if tmp:
@@ -2368,12 +2381,13 @@ def up(
 
         # [8] Cover handling — always download the cover and REHOST it via
         # ptscreens/imgbb/catbox (never hotlink the source URL).
-        # Priority: --cover override > scraper cover > DuckDuckGo fallback > embedded file cover
+        # Priority: --cover override > edited image [img] > scraper cover > DuckDuckGo fallback > embedded file cover
         cover_url = None
         cover_path = metadata.get("cover_path")  # embedded file cover (last resort)
         cover_scraper = metadata.get("cover_url_scraper")
+        edited_image = (metadata.get("image") or "").strip()
         temp_cover = None
-        # 1) --cover override (rehost it too)
+        # 1) --cover override (rehost it too) — highest priority
         if cover and not temp_cover:
             tmp = _download_url_to_temp(cover)
             if tmp:
@@ -2381,7 +2395,15 @@ def up(
                 click.secho(f"Downloaded cover (override): {cover}", fg="green")
             else:
                 click.secho(f"Failed to download override cover: {cover}", fg="yellow")
-        # 2) Scraper cover (best quality — always scrape per user decision)
+        # 2) Edited image via review menu [img] — manual URL override (rehost it)
+        if edited_image and not temp_cover and edited_image.lower().startswith("http"):
+            tmp = _download_url_to_temp(edited_image)
+            if tmp:
+                temp_cover = tmp
+                click.secho(f"Downloaded cover from edited image: {edited_image}", fg="green")
+            else:
+                click.secho(f"Failed to download edited image URL: {edited_image}", fg="yellow")
+        # 3) Scraper cover (best quality — always scrape per user decision)
         if cover_scraper and not temp_cover:
             tmp = _download_url_to_temp(cover_scraper)
             if tmp:
@@ -2389,7 +2411,7 @@ def up(
                 click.secho(f"Downloaded cover from scraper: {cover_scraper}", fg="green")
             else:
                 click.secho(f"Failed to download scraper cover: {cover_scraper}", fg="yellow")
-        # 3) DuckDuckGo fallback if no scraper cover
+        # 4) DuckDuckGo fallback if no scraper cover
         if not temp_cover:
             try:
                 from simurg.config import get_config
@@ -2406,7 +2428,7 @@ def up(
                         click.secho(f"Fallback DuckDuckGo cover: {dd_path}", fg="green")
             except Exception as e:
                 click.secho(f"DuckDuckGo fallback failed: {e}", fg="yellow")
-        # 4) Embedded file cover as last resort
+        # 5) Embedded file cover as last resort
         if not temp_cover and cover_path and Path(cover_path).exists():
             temp_cover = cover_path
             click.secho(f"Using cover from file: {cover_path}", fg="green")
