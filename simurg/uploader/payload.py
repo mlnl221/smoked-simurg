@@ -78,6 +78,24 @@ def _magazine_issue_date_for_payload(raw: str | None) -> str:
     return s
 
 
+def _tags_for_payload(raw) -> str:
+    """Serialize tags to the single comma-separated string Simurg expects.
+
+    ``combine.py`` stores tags as a string, but review edits (``_edit_list``,
+    ``_edit_all_json``) turn them into a list. Posting a list makes
+    ``requests`` emit repeated ``tags`` multipart parts, and PHP keeps only
+    the last one — so ``['fiction', 'american', 'west']`` arrived as just
+    ``west``. Join lists here at the wire boundary; plain join, no re-clean.
+    """
+    if not raw:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, (list, tuple)):
+        return ", ".join(str(t).strip() for t in raw if str(t).strip())
+    return str(raw)
+
+
 def _ensure_magazine_synopsis(metadata: dict) -> str:
     """Ensure magazine synopsis (book_desc) is >=10 chars for Simurg.
 
@@ -123,7 +141,7 @@ def _ensure_magazine_synopsis(metadata: dict) -> str:
     if issn_any:
         fallback += f" - ISSN {issn_any}"
     fallback += "."
-    tags = (metadata.get("tags") or "").strip()
+    tags = _tags_for_payload(metadata.get("tags")).strip()
     if tags and tags != "magazine":
         fallback += f" Tags: {tags}."
     else:
@@ -192,7 +210,7 @@ def compile_data_new_publication(
         or metadata.get("release_title")
         or "Unknown",
         "year": str(metadata.get("remaster_year") or metadata.get("year") or ""),
-        "tags": metadata.get("tags") or "",
+        "tags": _tags_for_payload(metadata.get("tags")),
         "image": cover_url or metadata.get("image") or "",
         "language": metadata.get("language", "English"),
         # Publisher maps to Gazelle's legacy "record_label" field (label says "Publisher:")
@@ -258,7 +276,7 @@ def compile_data_existing_publication(
         "album_desc": metadata.get("release_notes") or "",
         "release_desc": metadata.get("release_desc") or "",
         "image": cover_url or metadata.get("image") or "",
-        "tags": metadata.get("tags") or "",
+        "tags": _tags_for_payload(metadata.get("tags")),
         # Publisher -> legacy "record_label"; ISBN -> legacy "catalogue_number"
         "record_label": metadata.get("publisher") or "",
         "catalogue_number": metadata.get("isbn") or "",
@@ -307,7 +325,7 @@ def compile_data_new_magazine(
         "magazine_volume": str(metadata.get("volume") or ""),
         "magazine_issue_number": str(metadata.get("issue_number") or ""),
         # Shared fields
-        "tags": metadata.get("tags") or "magazine",
+        "tags": _tags_for_payload(metadata.get("tags")) or "magazine",
         "image": cover_url or metadata.get("image") or "",
         "language": metadata.get("language", "English"),
         "page_count": str(metadata.get("page_count") or ""),
@@ -363,7 +381,7 @@ def compile_data_existing_magazine(
         "album_desc": metadata.get("release_notes") or "",
         "release_desc": metadata.get("release_desc") or "",
         "image": cover_url or metadata.get("image") or "",
-        "tags": metadata.get("tags") or "magazine",
+        "tags": _tags_for_payload(metadata.get("tags")) or "magazine",
         # Publication-level fields (ignored if read-only when existing selected)
         "magazine_publisher": metadata.get("publisher") or "",
         "magazine_country": metadata.get("country") or "",
