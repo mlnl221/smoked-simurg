@@ -118,12 +118,13 @@ def print_search_results(gazelle_site, results, searchstr):
 
 
 def _prompt_for_group_id(gazelle_site, results, offer_deletion=False):
+    """Prompt for existing Publication. Returns int gid, None for new, "skip", or "delete"."""
     while True:
         group_id = click.prompt(
             click.style(
                 "\nWould you like to upload to an existing Publication?\n"
                 f"Paste a URL{', pick from groups found ' if results else ''}"
-                "or [N]ew Publication / [a]bort / [s]kip file",
+                "or [N]ew Publication / [a]bort (skip file) / [s]kip file / [d]elete file",
                 fg="magenta",
             ),
             default="N",
@@ -132,10 +133,10 @@ def _prompt_for_group_id(gazelle_site, results, offer_deletion=False):
         if not s or s.lower().startswith("n"):
             click.echo("Uploading to a new Publication.")
             return None
-        if s.lower() in ("s", "skip"):
+        if s.lower() in ("s", "skip", "a", "abort"):
             return "skip"
-        if s.lower().startswith("a"):
-            raise click.Abort
+        if s.lower() in ("d", "delete"):
+            return "delete"
         if s.isdigit():
             idx = int(s) - 1
             if idx < 0:
@@ -208,6 +209,7 @@ def print_torrents(gazelle_site, group_id, rset=None, highlight_torrent_id=None)
 
 
 def _confirm_group_id(gazelle_site, group_id, results):
+    """Confirm upload to Publication. Returns True (yes), False (new), "skip", or "delete"."""
     rset = None
     for r in results:
         gid = r.get("groupId") or r.get("group_id") or r.get("id")
@@ -218,14 +220,16 @@ def _confirm_group_id(gazelle_site, group_id, results):
     while True:
         resp = click.prompt(
             click.style(
-                "\nAre you sure you want to upload to this Publication? [Y]es, [n]ew, [a]bort",
+                "\nAre you sure you want to upload to this Publication? [Y]es, [n]ew, [a]bort (skip), [d]elete",
                 fg="magenta",
             ),
             default="Y",
         )
         c = resp.strip().lower()
-        if c.startswith("a"):
-            raise click.Abort
+        if c in ("a", "abort"):
+            return "skip"
+        elif c in ("d", "delete"):
+            return "delete"
         elif c.startswith("y") or c == "":
             return True
         elif c.startswith("n"):
@@ -233,7 +237,7 @@ def _confirm_group_id(gazelle_site, group_id, results):
 
 
 def check_existing_group(gazelle_site, searchstrs, offer_deletion=False, group_id_override=None):
-    """High-level dupe check: returns group_id or None or 'skip'."""
+    """High-level dupe check: returns group_id, None, "skip", or "delete"."""
     if group_id_override is not None:
         return group_id_override
 
@@ -355,12 +359,19 @@ def check_existing_group(gazelle_site, searchstrs, offer_deletion=False, group_i
             raise
         if chosen == "skip":
             return "skip"
+        if chosen == "delete":
+            return "delete"
         if chosen is None:
             click.secho("Creating new Publication.", fg="green")
             return None
         # Confirm the chosen id shows correct publication
         try:
-            if _confirm_group_id(gazelle_site, chosen, results):
+            confirmed = _confirm_group_id(gazelle_site, chosen, results)
+            if confirmed == "skip":
+                return "skip"
+            if confirmed == "delete":
+                return "delete"
+            if confirmed:
                 return int(chosen)
             click.secho("Creating new Publication.", fg="green")
             return None

@@ -215,11 +215,12 @@ def _edit_all_json(metadata: dict, editable: list[str], editor: str) -> None:
         return
 
 
-def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False) -> dict:
+def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False) -> dict | str:
     """Let the user revise scraped/combined metadata in their editor.
 
     Per-field menu (opens nano for each) plus a ``[*]`` whole-dict JSON edit,
-    exactly like smoked-salmon-mini. Returns the (mutated) metadata dict.
+    exactly like smoked-salmon-mini. Returns the (mutated) metadata dict,
+    "skip" to skip the file, or "delete" to delete the file.
     """
     # Skip the interactive editor when there's no TTY (e.g. under a test
     # harness / CI). We intentionally still prompt during --dry-run when a TTY
@@ -280,7 +281,7 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
         )
         if is_pack:
             menu += " [cs]coverage start [ce]coverage end [cn]issue count [cp]is complete(1/0) [im]manifest"
-        menu += " [*]edit ALL (JSON) [n]othing"
+        menu += " [*]edit ALL (JSON) [n]othing [a]bort (skip file) [d]elete file"
     else:
         edit_functions = {
             "t": lambda: _edit_scalar(metadata, "title", editor),
@@ -299,7 +300,7 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
         menu = (
             "\nRevise metadata? [t]itle [r]elease title [a]uthors [y]ears "
             "[p]ublisher [i]sbn [g]enres/tags [s]ource [l]anguage [d]escription "
-            "[pg]pages [*]edit ALL (JSON) [n]othing"
+            "[pg]pages [*]edit ALL (JSON) [n]othing [a]bort (skip file) [d]elete file"
         )
 
     while True:
@@ -311,6 +312,10 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
         )
         if ans in ("n", "nothing", ""):
             break
+        if ans in ("a", "abort"):
+            return "skip"  # type: ignore[return-value]
+        if ans in ("d", "delete"):
+            return "delete"  # type: ignore[return-value]
         if ans == "*":
             edit_functions["*"]()
             continue
