@@ -172,7 +172,7 @@ def test_build_release_desc_basic():
     assert "[b]Publisher:[/b] Penguin" in desc
     assert "[b]ISBN:[/b] 123" in desc
     assert "openlibrary.org" in desc
-    assert "Uploaded with smoked-simurg" in desc
+    assert "[url=https://github.com/mlnl221/smoked-simurg]smoked-simurg[/url]" in desc
 
 
 def test_build_release_desc_with_extra_urls():
