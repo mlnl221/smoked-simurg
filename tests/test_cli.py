@@ -279,7 +279,11 @@ def test_prompt_scraper_selection_skip_and_abort():
             + (
                 "skip"
                 if choice == "skip"
-                else (str(None) if choice is None else choice["_scraper"])
+                else (
+                    "delete"
+                    if choice == "delete"
+                    else (str(None) if choice is None else choice["_scraper"])
+                )
             )
         )
 
@@ -287,9 +291,75 @@ def test_prompt_scraper_selection_skip_and_abort():
     assert r.exit_code == 0
     assert "RESULT:skip" in r.output
 
+    # [a]bort now skips the file instead of aborting the batch
     r2 = CliRunner().invoke(cmd, input="a\n")
-    assert r2.exit_code != 0  # abort raises SystemExit
-    assert "Aborted" in r2.output
+    assert r2.exit_code == 0
+    assert "RESULT:skip" in r2.output
+
+    r3 = CliRunner().invoke(cmd, input="d\n")
+    assert r3.exit_code == 0
+    assert "RESULT:delete" in r3.output
+
+
+def test_confirm_delete_file_dry_run_keeps_file(tmp_path, monkeypatch):
+    from simurg.cli import _confirm_delete_file
+
+    f = tmp_path / "book.epub"
+    f.write_bytes(b"x" * 100)
+    monkeypatch.setattr("simurg.cli.click.confirm", lambda *_, **__: True)
+    assert _confirm_delete_file(f, dry_run=True) is True
+    assert f.exists()
+
+
+def test_confirm_delete_file_confirmed(tmp_path, monkeypatch):
+    from simurg.cli import _confirm_delete_file
+
+    f = tmp_path / "book.epub"
+    f.write_bytes(b"x" * 100)
+    monkeypatch.setattr("simurg.cli.click.confirm", lambda *_, **__: True)
+    assert _confirm_delete_file(f, dry_run=False) is True
+    assert not f.exists()
+
+
+def test_confirm_delete_file_declined(tmp_path, monkeypatch):
+    from simurg.cli import _confirm_delete_file
+
+    f = tmp_path / "book.epub"
+    f.write_bytes(b"x" * 100)
+    monkeypatch.setattr("simurg.cli.click.confirm", lambda *_, **__: False)
+    assert _confirm_delete_file(f, dry_run=False) is False
+    assert f.exists()
+
+
+def test_review_metadata_abort_delete(monkeypatch):
+    import sys
+
+    import simurg.metadata.review as rev
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    md = {"title": "Dune", "authors": ["Frank Herbert"]}
+
+    monkeypatch.setattr(rev.click, "prompt", lambda *_, **__: "a")
+    assert rev.review_metadata(dict(md)) == "skip"
+
+    monkeypatch.setattr(rev.click, "prompt", lambda *_, **__: "d")
+    assert rev.review_metadata(dict(md)) == "delete"
+
+
+def test_dupe_prompts_abort_delete(monkeypatch):
+    import simurg.uploader.dupe as dupe
+
+    class Site:
+        base_url = "https://simurg.world"
+        site_string = "SIM"
+
+    monkeypatch.setattr(dupe.click, "prompt", lambda *_, **__: "a")
+    assert dupe._prompt_for_group_id(Site(), []) == "skip"
+    assert dupe._confirm_group_id(Site(), 1, [{"groupId": 1}]) == "skip"
+
+    monkeypatch.setattr(dupe.click, "prompt", lambda *_, **__: "d")
+    assert dupe._prompt_for_group_id(Site(), []) == "delete"
+    assert dupe._confirm_group_id(Site(), 1, [{"groupId": 1}]) == "delete"
 
 
 def test_prompt_field_merge_no_difference_returns_empty():

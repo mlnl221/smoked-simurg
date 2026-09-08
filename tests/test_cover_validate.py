@@ -117,16 +117,18 @@ def test_prompt_manual_cover_dry_run_returns_none():
 
 
 def test_prompt_manual_cover_skip(monkeypatch):
-    import click
 
     import simurg.cli as cli
 
     monkeypatch.setattr("simurg.cli.click.prompt", lambda *_, **__: "s")
     assert cli._prompt_manual_cover("T", ["A"]) is None
 
+    # [a]bort now skips the file instead of aborting the batch
     monkeypatch.setattr("simurg.cli.click.prompt", lambda *_, **__: "a")
-    with pytest.raises(click.Abort):
-        cli._prompt_manual_cover("T", ["A"])
+    assert cli._prompt_manual_cover("T", ["A"]) == "skip"
+
+    monkeypatch.setattr("simurg.cli.click.prompt", lambda *_, **__: "d")
+    assert cli._prompt_manual_cover("T", ["A"]) == "delete"
 
 
 def test_confirm_keep_on_enter(tmp_path, monkeypatch):
@@ -160,16 +162,17 @@ def test_confirm_skip_preserves_embedded(tmp_path, monkeypatch):
     assert tmp.exists()
 
 
-def test_confirm_abort(tmp_path, monkeypatch):
-    import click
-
+def test_confirm_abort_skips_file(tmp_path, monkeypatch):
     import simurg.cli as cli
 
     tmp = tmp_path / "cover.jpg"
     tmp.write_bytes(b"x" * 6000)
     monkeypatch.setattr("simurg.cli.click.prompt", lambda *_, **__: "a")
-    with pytest.raises(click.Abort):
-        cli._confirm_rehosted_cover("http://host/img.jpg", str(tmp))
+    # [a]bort now skips the file instead of aborting the batch
+    assert cli._confirm_rehosted_cover("http://host/img.jpg", str(tmp)) == "skip"
+
+    monkeypatch.setattr("simurg.cli.click.prompt", lambda *_, **__: "d")
+    assert cli._confirm_rehosted_cover("http://host/img.jpg", str(tmp)) == "delete"
 
 
 def test_confirm_dry_run_passthrough(tmp_path, monkeypatch):

@@ -62,6 +62,25 @@ def _rate_limit_wait(seconds: int = 15, label: str = "") -> None:
         raise click.Abort() from None
 
 
+def _confirm_delete_file(filepath: Path, dry_run: bool = False) -> bool:
+    """Confirm then delete a source file. Returns True if deleted (or dry-run would-delete)."""
+    try:
+        if not click.confirm(f"Delete file {filepath.name}?", default=False):
+            return False
+    except (click.Abort, EOFError):
+        return False
+    if dry_run:
+        click.secho(f"Dry-run: would delete {filepath}", fg="yellow")
+        return True
+    try:
+        Path(filepath).unlink(missing_ok=True)
+        click.secho(f"Deleted {filepath.name}", fg="yellow")
+        return True
+    except Exception as e:
+        click.secho(f"Delete failed for {filepath.name}: {e}", fg="red")
+        return False
+
+
 def _print_inbuilt_metadata(inbuilt: dict, fmt: str, is_mag: bool = False) -> None:
     """Pretty panel of the metadata read from the file, shown before scraping.
 
@@ -140,14 +159,19 @@ def _download_url_to_temp(url: str) -> str | None:
 
 
 def _prompt_manual_cover(title: str, authors: list, dry_run: bool = False) -> str | None:
-    """Prompt for a manual cover URL after automatic sources failed validation."""
+    """Prompt for a manual cover URL after automatic sources failed validation.
+
+    Returns the temp path, None to continue without cover, "skip" to skip the
+    file, or "delete" to delete the file.
+    """
     if dry_run:
         return None
     click.echo("Automatic cover sources failed validation.")
     while True:
         try:
             pasted = click.prompt(
-                "Paste cover image URL ([s]kip without cover / [a]bort)", type=str
+                "Paste cover image URL ([s]kip without cover / [a]bort skips file / [d]elete file)",
+                type=str,
             ).strip()
         except (click.Abort, EOFError):
             raise click.Abort() from None
@@ -155,7 +179,9 @@ def _prompt_manual_cover(title: str, authors: list, dry_run: bool = False) -> st
         if low in ("s", "skip", ""):
             return None
         if low in ("a", "abort"):
-            raise click.Abort()
+            return "skip"
+        if low in ("d", "delete"):
+            return "delete"
         if not pasted.startswith("http"):
             click.secho("Cover URL must start with http.", fg="yellow")
             continue
@@ -177,14 +203,15 @@ def _confirm_rehosted_cover(
     temp_cover: str | None,
     cover_path: str | None = None,
     dry_run: bool = False,
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None] | str:
+    """Confirm a rehosted cover. Returns (url, path), "skip" to skip file, "delete" to delete file."""
     if not cover_url or not temp_cover or dry_run:
         return (cover_url, temp_cover)
     while True:
         try:
             ans = (
                 click.prompt(
-                    "Open the link above and check the image ([Enter] keep / [u] new URL / [s] skip without cover / [a]bort)",
+                    "Open the link above and check the image ([Enter] keep / [u] new URL / [s] skip without cover / [a]bort skips file / [d]elete file)",
                     type=str,
                     default="",
                     show_default=False,
@@ -202,7 +229,9 @@ def _confirm_rehosted_cover(
                         pass
                 return (None, None)
             if ans in ("a", "abort"):
-                raise click.Abort()
+                return "skip"
+            if ans in ("d", "delete"):
+                return "delete"
             if ans == "u":
                 url = click.prompt("Paste replacement cover image URL", type=str).strip()
                 if not url.startswith("http"):
@@ -238,7 +267,7 @@ def _confirm_rehosted_cover(
                     except Exception:
                         pass
                 continue
-            click.secho("Invalid choice — Enter keeps, u/s/a.", fg="yellow")
+            click.secho("Invalid choice — Enter keeps, u/s/a/d.", fg="yellow")
         except EOFError:
             return (cover_url, temp_cover)
         except click.Abort:
@@ -577,8 +606,8 @@ def _prompt_no_results_fallback(
 ) -> dict | str | None:
     """Offer interactive retry options when scraper search returns empty.
 
-    Returns the chosen result dict, None for inbuilt-only, or "skip".
-    Retries up to ``_MAX_FALLBACK_ATTEMPTS`` times before auto-falling back.
+    Returns the chosen result dict, None for inbuilt-only, "skip" to skip the
+    file, or "delete" to delete the file.
     """
     title = (inbuilt.get("title") or "").strip()
     authors = inbuilt.get("authors") or []
@@ -596,7 +625,8 @@ def _prompt_no_results_fallback(
             click.echo("  [u] Paste a URL")
         click.echo("  [i] Use inbuilt metadata only")
         click.echo("  [s] Skip this file")
-        click.echo("  [a] Abort all")
+        click.echo("  [a] Abort (skip this file)")
+        click.echo("  [d] Delete this file")
         ans = (
             click.prompt(
                 f"Retry ({attempt}/{_MAX_FALLBACK_ATTEMPTS})",
@@ -609,10 +639,10 @@ def _prompt_no_results_fallback(
         )
         if ans in ("i", "inbuilt", "n"):
             return None
-        if ans in ("s", "skip"):
+        if ans in ("s", "skip", "a", "abort"):
             return "skip"
-        if ans in ("a", "abort"):
-            raise click.Abort()
+        if ans in ("d", "delete"):
+            return "delete"
         if ans == "u":
             from simurg.metadata.enricher import supported_url_domains
 
@@ -673,7 +703,7 @@ def _prompt_no_results_fallback(
                 return _prompt_scraper_selection(results, inbuilt)
             click.secho("Still no results.", fg="yellow")
             continue
-        click.secho("Invalid choice — pick t, c, u, i, s or a.", fg="yellow")
+        click.secho("Invalid choice — pick t, c, u, i, s, a or d.", fg="yellow")
 
     click.secho(
         f"Max retry attempts reached — using inbuilt metadata only for {ref}",
@@ -685,8 +715,8 @@ def _prompt_no_results_fallback(
 def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str | None:
     """Let the user pick which scraper result to fill metadata from.
 
-    Returns the chosen result dict, None for inbuilt-only, or "skip".
-    Raises click.Abort on "a".
+    Returns the chosen result dict, None for inbuilt-only, "skip" to skip the
+    file, or "delete" to delete the file.
     """
     title = (inbuilt.get("title") or "").strip()
     authors = inbuilt.get("authors") or []
@@ -705,7 +735,8 @@ def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str 
     click.echo("  [i] Use inbuilt metadata only (skip scraper fill)")
     click.echo("  [u] Paste a scraper URL")
     click.echo("  [s] Skip this file")
-    click.echo("  [a] Abort all")
+    click.echo("  [a] Abort (skip this file)")
+    click.echo("  [d] Delete this file")
     while True:
         ans = (
             click.prompt("Choose a result", type=str, default="", show_default=False)
@@ -714,10 +745,10 @@ def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str 
         )
         if ans in ("i", "inbuilt", "n"):
             return None
-        if ans in ("s", "skip"):
+        if ans in ("s", "skip", "a", "abort"):
             return "skip"
-        if ans in ("a", "abort"):
-            raise click.Abort()
+        if ans in ("d", "delete"):
+            return "delete"
         if ans in ("u", "url"):
             from simurg.metadata.enricher import supported_url_domains
 
@@ -734,7 +765,7 @@ def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str 
             n = int(ans)
             if 1 <= n <= len(ranked):
                 return ranked[n - 1]
-        click.secho(f"Invalid choice — pick 1-{len(ranked)}, i, u, s or a.", fg="yellow")
+        click.secho(f"Invalid choice — pick 1-{len(ranked)}, i, u, s, a or d.", fg="yellow")
 
 
 def _norm_merge(v):
@@ -1141,6 +1172,7 @@ def up(
 
     uploaded = 0
     skipped = 0
+    deleted = 0
     failed = 0
 
     # Determine dottorrents dir
@@ -1311,7 +1343,36 @@ def up(
                         try:
                             from simurg.metadata.review import review_metadata
 
-                            metadata = review_metadata(metadata, is_mag=True, dry_run=dry_run)
+                            reviewed = review_metadata(metadata, is_mag=True, dry_run=dry_run)
+                            if isinstance(reviewed, str):
+                                if reviewed == "delete":
+                                    try:
+                                        names = ", ".join(p.name for p in pack_files[:3])
+                                        if len(pack_files) > 3:
+                                            names += f" (+{len(pack_files) - 3} more)"
+                                        if click.confirm(
+                                            f"Delete {len(pack_files)} pack file(s) ({names})?",
+                                            default=False,
+                                        ):
+                                            if not dry_run:
+                                                for p in pack_files:
+                                                    try:
+                                                        Path(p).unlink(missing_ok=True)
+                                                    except Exception:
+                                                        pass
+                                            deleted += 1
+                                        else:
+                                            skipped += 1
+                                    except (click.Abort, EOFError):
+                                        skipped += 1
+                                else:
+                                    click.secho(
+                                        f"Skipping pack {canonical_display} {pack_key} per user choice",
+                                        fg="yellow",
+                                    )
+                                    skipped += 1
+                                continue
+                            metadata = reviewed
                         except click.Abort:
                             raise
                         except Exception as e:
@@ -1417,6 +1478,16 @@ def up(
                                 metadata.get("authors") or [],
                                 dry_run=dry_run,
                             )
+                            if manual == "skip":
+                                click.secho(
+                                    f"Skipping pack {canonical_display} {pack_key} per user choice",
+                                    fg="yellow",
+                                )
+                                skipped += 1
+                                continue
+                            if manual == "delete":
+                                skipped += 1
+                                continue
                             if manual:
                                 temp_cover = manual
                         except click.Abort:
@@ -1444,9 +1515,27 @@ def up(
                         cover_url = None
                     if cover_url and not dry_run:
                         try:
-                            cover_url, temp_cover = _confirm_rehosted_cover(
+                            confirmed = _confirm_rehosted_cover(
                                 cover_url, temp_cover, cover_path=None, dry_run=dry_run
                             )
+                            if confirmed == "skip":
+                                if temp_cover:
+                                    try:
+                                        Path(temp_cover).unlink(missing_ok=True)
+                                    except Exception:
+                                        pass
+                                skipped += 1
+                                continue
+                            if confirmed == "delete":
+                                if temp_cover:
+                                    try:
+                                        Path(temp_cover).unlink(missing_ok=True)
+                                    except Exception:
+                                        pass
+                                skipped += 1
+                                continue
+                            assert isinstance(confirmed, tuple)
+                            cover_url, temp_cover = confirmed
                         except click.Abort:
                             raise
                     if temp_cover:
@@ -1540,6 +1629,9 @@ def up(
                                 )
                                 skipped += 1
                                 continue
+                            if result_gid == "delete":
+                                skipped += 1
+                                continue
                             search_gid = result_gid
                         except click.Abort:
                             raise
@@ -1597,7 +1689,7 @@ def up(
                 if dry_run:
                     color = "green" if failed == 0 else "yellow"
                     click.secho(
-                        f"{OK_SYMBOL if failed == 0 else WARN_SYMBOL} Summary: Dry-run — prepared {uploaded}/{len(packs)} pack(s) (torrents in {dottorrents_dir}/, no uploads sent), skipped {skipped}, failed {failed}",
+                        f"{OK_SYMBOL if failed == 0 else WARN_SYMBOL} Summary: Dry-run — prepared {uploaded}/{len(packs)} pack(s) (torrents in {dottorrents_dir}/, no uploads sent), skipped {skipped}, deleted {deleted}, failed {failed}",
                         fg=color,
                         bold=True,
                     )
@@ -1605,7 +1697,7 @@ def up(
                     color = "green" if failed == 0 else "yellow"
                     sym = OK_SYMBOL if failed == 0 else WARN_SYMBOL
                     click.secho(
-                        f"{sym} Summary: Uploaded {uploaded}/{len(packs)} pack(s), skipped {skipped}, failed {failed} — check {dottorrents_dir}/",
+                        f"{sym} Summary: Uploaded {uploaded}/{len(packs)} pack(s), skipped {skipped}, deleted {deleted}, failed {failed} — check {dottorrents_dir}/",
                         fg=color,
                         bold=True,
                     )
@@ -1799,6 +1891,12 @@ def up(
                             )
                             skipped += 1
                             continue
+                        if choice == "delete":
+                            if _confirm_delete_file(filepath, dry_run=dry_run):
+                                deleted += 1
+                            else:
+                                skipped += 1
+                            continue
                         if choice is None:
                             click.secho(
                                 "Using inbuilt metadata only (no scraper fill)", fg="yellow"
@@ -1825,6 +1923,12 @@ def up(
                                 fg="yellow",
                             )
                             skipped += 1
+                            continue
+                        if choice == "delete":
+                            if _confirm_delete_file(filepath, dry_run=dry_run):
+                                deleted += 1
+                            else:
+                                skipped += 1
                             continue
                         if choice is not None:
                             scraper_data = choice
@@ -2039,7 +2143,9 @@ def up(
                                     "  [u] Paste an OpenAlex URL (e.g. https://openalex.org/S137355760"
                                     " or https://api.openalex.org/sources/S137355760) to fetch ISSN manually"
                                 )
-                                click.echo("  [Enter] Keep without ISSN  |  [a] Abort all")
+                                click.echo(
+                                    "  [Enter] Keep without ISSN  |  [a] Abort (skip file)  |  [d] Delete file"
+                                )
                                 try:
                                     choice = click.prompt(
                                         "OpenAlex URL", type=str, default="", show_default=False
@@ -2047,7 +2153,18 @@ def up(
                                 except click.Abort:
                                     raise
                                 if choice.lower() in ("a", "abort"):
-                                    raise click.Abort
+                                    click.secho(
+                                        f"Skipping file {filepath.name} per user choice",
+                                        fg="yellow",
+                                    )
+                                    skipped += 1
+                                    continue
+                                if choice.lower() in ("d", "delete"):
+                                    if _confirm_delete_file(filepath, dry_run=dry_run):
+                                        deleted += 1
+                                    else:
+                                        skipped += 1
+                                    continue
                                 pasted_url = ""
                                 if choice.lower() in ("u", "url"):
                                     try:
@@ -2238,7 +2355,7 @@ def up(
                                     else:
                                         # Interactive pick
                                         click.echo(
-                                            "  [i] Keep without Simurg ISSN  |  [s] Skip this file  |  [a] Abort all"
+                                            "  [i] Keep without Simurg ISSN  |  [s] Skip this file  |  [a] Abort (skip file)  |  [d] Delete file"
                                         )
                                         while True:
                                             ans = (
@@ -2256,7 +2373,7 @@ def up(
                                                     "Keeping without Simurg ISSN.", fg="yellow"
                                                 )
                                                 break
-                                            if ans in ("s", "skip"):
+                                            if ans in ("s", "skip", "a", "abort"):
                                                 click.secho(
                                                     f"Skipping file {filepath.name} per user choice",
                                                     fg="yellow",
@@ -2266,8 +2383,13 @@ def up(
                                                 # Use a sentinel via metadata flag; handle after this block
                                                 metadata["_simurg_skip_file"] = True  # type: ignore
                                                 break
-                                            if ans in ("a", "abort"):
-                                                raise click.Abort
+                                            if ans in ("d", "delete"):
+                                                if _confirm_delete_file(filepath, dry_run=dry_run):
+                                                    deleted += 1
+                                                else:
+                                                    skipped += 1
+                                                metadata["_simurg_skip_file"] = True  # type: ignore
+                                                break
                                             if ans.isdigit():
                                                 n = int(ans)
                                                 if 1 <= n <= len(candidates):
@@ -2307,7 +2429,7 @@ def up(
                                                         )
                                                     break
                                             click.secho(
-                                                f"Invalid choice — pick 1-{len(candidates)}, i, s or a.",
+                                                f"Invalid choice — pick 1-{len(candidates)}, i, s, a or d.",
                                                 fg="yellow",
                                             )
                                         if metadata.get("_simurg_skip_file"):
@@ -2403,7 +2525,18 @@ def up(
             try:
                 from simurg.metadata.review import review_metadata
 
-                metadata = review_metadata(metadata, is_mag=is_mag, dry_run=dry_run)
+                reviewed = review_metadata(metadata, is_mag=is_mag, dry_run=dry_run)
+                if isinstance(reviewed, str):
+                    if reviewed == "delete":
+                        if _confirm_delete_file(filepath, dry_run=dry_run):
+                            deleted += 1
+                        else:
+                            skipped += 1
+                    else:
+                        click.secho(f"Skipping file {filepath.name} per user choice", fg="yellow")
+                        skipped += 1
+                    continue
+                metadata = reviewed
             except click.Abort:
                 raise
             except Exception as e:
@@ -2457,6 +2590,12 @@ def up(
                 if result_gid == "skip":
                     click.secho(f"Skipping file {filepath.name} per user choice", fg="yellow")
                     skipped += 1
+                    continue
+                if result_gid == "delete":
+                    if _confirm_delete_file(filepath, dry_run=dry_run):
+                        deleted += 1
+                    else:
+                        skipped += 1
                     continue
                 search_gid = result_gid
             except click.Abort:
@@ -2604,6 +2743,16 @@ def up(
                     metadata.get("authors") or [],
                     dry_run=dry_run,
                 )
+                if manual == "skip":
+                    click.secho(f"Skipping file {filepath.name} per user choice", fg="yellow")
+                    skipped += 1
+                    continue
+                if manual == "delete":
+                    if _confirm_delete_file(filepath, dry_run=dry_run):
+                        deleted += 1
+                    else:
+                        skipped += 1
+                    continue
                 if manual:
                     temp_cover = manual
             except click.Abort:
@@ -2636,9 +2785,31 @@ def up(
             cover_url = None
         if cover_url and not dry_run:
             try:
-                cover_url, temp_cover = _confirm_rehosted_cover(
+                confirmed = _confirm_rehosted_cover(
                     cover_url, temp_cover, cover_path=cover_path, dry_run=dry_run
                 )
+                if confirmed == "skip":
+                    if temp_cover and temp_cover != cover_path:
+                        try:
+                            Path(temp_cover).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    click.secho(f"Skipping file {filepath.name} per user choice", fg="yellow")
+                    skipped += 1
+                    continue
+                if confirmed == "delete":
+                    if temp_cover and temp_cover != cover_path:
+                        try:
+                            Path(temp_cover).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    if _confirm_delete_file(filepath, dry_run=dry_run):
+                        deleted += 1
+                    else:
+                        skipped += 1
+                    continue
+                assert isinstance(confirmed, tuple)
+                cover_url, temp_cover = confirmed
             except click.Abort:
                 raise
 
@@ -2797,7 +2968,7 @@ def up(
         click.secho(
             f"{OK_SYMBOL if failed == 0 else WARN_SYMBOL} Summary: Dry-run — prepared "
             f"{uploaded}/{len(ebook_files)} (torrents in {dottorrents_dir}/, no uploads sent), "
-            f"skipped {skipped}, failed {failed}",
+            f"skipped {skipped}, deleted {deleted}, failed {failed}",
             fg=color,
             bold=True,
         )
@@ -2806,7 +2977,7 @@ def up(
         sym = OK_SYMBOL if failed == 0 else WARN_SYMBOL
         click.secho(
             f"{sym} Summary: Uploaded {uploaded}/{len(ebook_files)}, skipped {skipped}, "
-            f"failed {failed} — check {dottorrents_dir}/",
+            f"deleted {deleted}, failed {failed} — check {dottorrents_dir}/",
             fg=color,
             bold=True,
         )
