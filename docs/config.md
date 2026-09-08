@@ -7,11 +7,11 @@ cp config.example.toml config.toml
 # edit session / announce_url / image keys
 ```
 
-Secrets rule: never commit `config.toml`, `*.torrent`, or a personal `https://tracker.simurg.world/<passkey>/announce` (`AGENTS.md`, `README.md:44-52`).
+Secrets rule: never commit `config.toml`, `*.torrent`, or a personal `https://tracker.simurg.world/<passkey>/announce` (see `README.md`).
 
 ## Cache
 
-`.cache/magazine_issns.csv` is a local exact-title ISSN cache (gitignored, `uploader/magazine_issn.py:20-140`). It is not configured in `config.toml` — it lives at repo root `.cache/` and is created on demand. Columns: `title,print_issn,electronic_issn,issn,issn_l,source`. A magazine title that was successfully scraped once (via scraper warm, `OpenAlex`, manual `S...` URL, or Simurg browse) is persisted; the next file with the same exact title (casefold, e.g. `Penthouse` == `penthouse` but not `Playboy USA`) reuses `1019-5009` / `1019-5009` without network. Safe to delete; it rebuilds. Never commit it.
+`.cache/magazine_issns.csv` is a local publisher-keyed ISSN cache (gitignored, `uploader/magazine_issn.py`). It is not configured in `config.toml` — it lives at repo root `.cache/` and is created on demand. Columns: `publisher,print_issn,electronic_issn,issn,issn_l,country,source` (old CSVs with a `title` column are read as fallback). A publisher whose ISSN was successfully scraped once (via scraper warm, `OpenAlex`, manual `S...` URL, or Simurg browse) is persisted; the next issue from the same publisher (casefold match) reuses the ISSNs without network. Safe to delete; it rebuilds. Never commit it.
 
 ## Sections
 
@@ -21,7 +21,7 @@ Secrets rule: never commit `config.toml`, `*.torrent`, or a personal `https://tr
 |---|---|---|
 | `upload_directory` | `.books` | Where uploaded/staged books live |
 | `dottorrents_dir` | `.torrents` | Where generated `.torrent` files are written |
-| `staging_dir` | `.staging` | Where renamed files are moved before torrenting. If empty, falls back to `upload_directory`, then `.staging` (`README.md:58-60`) |
+| `staging_dir` | `.staging` | Where renamed files are moved before torrenting. If empty, falls back to `upload_directory`, then `.staging` |
 
 `cli.py:827-839` resolves `dottorrents_dir` from `directory.dottorrents_dir`, overridden by `tracker.simurg.dottorrents_dir` when set.
 
@@ -41,7 +41,7 @@ staging_dir = ".staging"
 | `imgbb_key` | API key for `imgbb` |
 | `catbox_userhash` | Optional `catbox` userhash |
 
-The uploader always rehosts (`images/base.py`, `ptscreens.py`, `imgbb.py`, `catbox.py`): download → downscale ~500×500 → PNG→JPG → upload to the chosen host. Source URLs are never hotlinked (`rules.txt:52`, `cli.py:1287-1290`).
+The uploader always rehosts (`images/base.py`, `ptscreens.py`, `imgbb.py`, `catbox.py`): download → validate (`image/*`, ≥5 KB, `Pillow` parse, ≥100×100 px) → downscale ~500×500 → PNG→JPG → upload to the chosen host. Source URLs are never hotlinked (`rules.txt:52`). Priority: `--cover` → edited `[img]` URL → scraper → DuckDuckGo → embedded file cover. When all sources fail you are prompted for a cover URL, and after rehosting you confirm the hosted preview (both skipped in `--dry-run`); see `README.md` Covers.
 
 ```toml
 [image]
