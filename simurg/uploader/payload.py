@@ -86,14 +86,21 @@ def _tags_for_payload(raw) -> str:
     ``requests`` emit repeated ``tags`` multipart parts, and PHP keeps only
     the last one — so ``['fiction', 'american', 'west']`` arrived as just
     ``west``. Join lists here at the wire boundary; plain join, no re-clean.
+
+    Trims to the tracker 200-char limit (``fit_tags_to_limit`` drops trailing
+    tags) so manual review edits cannot push the string over either.
     """
     if not raw:
         return ""
     if isinstance(raw, str):
-        return raw
-    if isinstance(raw, (list, tuple)):
-        return ", ".join(str(t).strip() for t in raw if str(t).strip())
-    return str(raw)
+        items = [t.strip() for t in raw.split(",") if t.strip()]
+    elif isinstance(raw, (list, tuple)):
+        items = [str(t).strip() for t in raw if str(t).strip()]
+    else:
+        return str(raw)
+    from simurg.metadata.combine import fit_tags_to_limit
+
+    return ", ".join(fit_tags_to_limit(items))
 
 
 def _ensure_magazine_synopsis(metadata: dict) -> str:

@@ -67,3 +67,8 @@ This file records past failures for this project. Agents must read it before sta
 - **Why it happened**: Pattern matched the local gitignored `config.toml`; output not masked.
 - **How to avoid next time**: Never `rg`/`cat` `config.toml` unmasked. Scope secret scans to tracked files (`git grep`) and verify `config.toml` presence only via masked key-length checks.
 
+### 2026-09-09
+- **What happened**: Ebook upload `The Djinn in the Nightingale's Eye` failed with `{"status":"failure","error":"You must enter at least one tag. Maximum length is 200 characters."}` despite showing 8 tags. Payload tags string was 203 chars.
+- **Why it happened**: `clean_tags` capped tag COUNT at 8 but nothing enforced the tracker 200-char TOTAL on the joined string; `_tags_for_payload` passed it through untouched. Same gap let `Collections / Anthologies` become `collections..anthologies` (slash stripped, dots never collapsed).
+- **How to avoid next time**: When tracker validates a joined string field, cap the joined length at build time AND guard at the wire boundary (review edits bypass cleaning). Added `TAGS_MAX_LENGTH=200` + `fit_tags_to_limit()` (drop trailing tags, keep >=1) used by both `clean_tags` and `_tags_for_payload`; `clean_tags` also collapses `\.{2,}` and strips edge `.-`.
+
