@@ -277,3 +277,37 @@ def test_fit_tags_to_limit_drops_trailing_keeps_first():
     assert fit_tags_to_limit([]) == []
     single = fit_tags_to_limit(["x" * 250])
     assert len(single) == 1 and len(single[0]) == 200
+
+
+def test_clean_description_strips_tags_preserves_paragraphs():
+    from simurg.metadata.scrapers.util import clean_description
+
+    raw = "<div><p>First para.</p><h3>From Publishers Weekly</h3><p>Second <em>emph</em> para.</p></div>"
+    assert clean_description(raw) == "First para.\n\nFrom Publishers Weekly\n\nSecond emph para."
+
+
+def test_clean_description_fledgling_snippet():
+    from simurg.metadata.scrapers.util import clean_description
+
+    raw = (
+        "<div><p>Octavia E. Butler is one of the finest voices &amp; more.</p>"
+        "<h3>From Publishers Weekly</h3>"
+        "<p><em>Starred Review.</em> Vampires with <em>Deadwood</em> vibes.<br/>Next line.</p></div>"
+    )
+    cleaned = clean_description(raw)
+    assert cleaned is not None
+    assert "<" not in cleaned and ">" not in cleaned
+    assert "&amp;" not in cleaned
+    assert "Octavia E. Butler" in cleaned
+    assert "Starred Review." in cleaned
+    assert "\n\n" in cleaned
+
+
+def test_build_metadata_strips_html_synopsis():
+    md = build_metadata(
+        {},
+        {"description": "<p>Hello <b>world</b></p><p>Second para.</p>"},
+        "epub",
+    )
+    assert md["album_desc"] == "Hello world\n\nSecond para."
+    assert "<" not in md["album_desc"]

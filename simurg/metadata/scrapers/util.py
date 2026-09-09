@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 
 MONTHS = {
@@ -76,6 +77,34 @@ def normalize_issue_date(raw) -> tuple[str | None, str | None]:
     if y:
         return str(y), "year"
     return None, None
+
+
+def clean_description(desc) -> str | None:
+    """Strip HTML tags, decode entities, preserve paragraph breaks.
+
+    Block tags (p/div/h1-h6/li/ul/ol/blockquote/hr/section/article) become
+    ``\\n\\n``; ``<br>`` becomes a space (inline line break); all other tags
+    are removed. Returns None when nothing remains.
+    """
+    if not desc:
+        return None
+    text = str(desc)
+    # ponytail: regex strip, BeautifulSoup overkill for one field
+    text = re.sub(r"<\s*br\s*/?\s*>", " ", text, flags=re.I)
+    text = re.sub(
+        r"<\s*/?\s*(p|div|h[1-6]|li|ul|ol|blockquote|hr|section|article)[^>]*>",
+        "\n\n",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    text = text.replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    paras = [re.sub(r"\s+", " ", p).strip() for p in text.split("\n\n")]
+    paras = [p for p in paras if p]
+    return "\n\n".join(paras) or None
 
 
 def issue_label(issue_date, precision, volume=None, issue_number=None) -> str:
