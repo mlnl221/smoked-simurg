@@ -4,7 +4,7 @@
 
 Local-only CLI to batch-upload E-Books to [Simurg](https://simurg.world/) (a Gazelle-based e-book tracker). No global installs — everything lives in this repo and runs via a local `.venv`.
 
-**MVP:** `python -m simurg up <directory>` (or `make run DIR=<directory>`) → N unrelated files (`.pdf/.epub/.mobi/.azw3/.djvu`) → N single-file private torrents (`source:SIM`, `private:1`, piece 32768). Each run processes the first `--limit` sorted files (default 50, `0` = unlimited) — rerun the same command for the next batch.
+**MVP:** `python -m simurg up <directory>` (or `make run DIR=<directory>`) → N unrelated files (`.pdf/.epub/.mobi/.azw3/.djvu`) → N single-file private torrents (`source:SIM`, `private:1`, piece 32768). Each run processes up to `--limit` files (default 50, `0` = unlimited; ebooks stop the directory walk at the cap) — rerun the same command for the next batch.
 
 ## Quick start
 

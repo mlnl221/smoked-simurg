@@ -296,6 +296,51 @@ def _decode_inbuilt_quick(filepath: Path) -> dict:
     return {}
 
 
+def _collect_batch_files(
+    dir_path: Path, allowed: set[str], limit: int
+) -> tuple[list[Path], list[Path], bool]:
+    """Walk dir_path iteratively, stopping after `limit` allowed matches.
+
+    Returns (ebook_files, txt_found, hit_limit). Only the collected batch is
+    sorted (walk order in, sorted out) so huge directories never pay a full
+    walk + full sort. Per-directory entries are sorted for a deterministic
+    walk; suffix is checked before the is_file stat to cut syscalls.
+    `limit <= 0` means unlimited (full walk).
+    """
+    import os
+
+    cap = limit if limit and limit > 0 else 0
+    ebook_files: list[Path] = []
+    txt_found: list[Path] = []
+    stack = [dir_path]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                entries = sorted(it, key=lambda e: e.name.lower())
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(Path(entry.path))
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                ext = Path(entry.name).suffix.lower()
+                if ext in allowed:
+                    ebook_files.append(Path(entry.path))
+                    if cap and len(ebook_files) >= cap:
+                        ebook_files = sorted(ebook_files, key=lambda p: p.name.lower())
+                        return ebook_files, txt_found, True
+                elif ext == ".txt":
+                    txt_found.append(Path(entry.path))
+            except OSError:
+                continue
+    ebook_files = sorted(ebook_files, key=lambda p: p.name.lower())
+    return ebook_files, txt_found, False
+
+
 def _flip_last_first(name: str) -> str:
     """Convert 'Last, First' to 'First Last'."""
     name = name.strip()
@@ -1002,7 +1047,7 @@ def cli():
     type=int,
     default=BATCH_LIMIT_DEFAULT,
     show_default=True,
-    help="Max files processed per run (0 = unlimited). Processes the first N sorted files; rerun the same command for the next batch.",
+    help="Max files processed per run (0 = unlimited). Ebooks stop the directory walk at N; magazines scan fully for pack detection. Rerun the same command for the next batch.",
 )
 def up(
     directory,
@@ -1020,8 +1065,9 @@ def up(
 ):
     """Batch upload N unrelated files -> N torrents (ebooks or magazines).
 
-    Only the first --limit sorted files are processed per run; rerun the
+    Ebooks stop the directory walk at --limit files per run; rerun the
     same command for the next batch (processed files move to staging).
+    Magazines scan the whole directory so packs stay complete.
 
     Examples:
 
@@ -1039,12 +1085,17 @@ def up(
             f"Found subdirectories: {[s.name for s in subdirs]} — scanning recursively",
             fg="cyan",
         )
-    # Recursively collect all files (covers both top-level batches and year-subfolders)
-    files = [p for p in dir_path.rglob("*") if p.is_file()]
-
     is_mag = category == "magazines"
     allowed = MAGAZINE_EXTENSIONS if is_mag else ALLOWED_EXTENSIONS
     format_map = MAGAZINE_FORMAT_MAP if is_mag else FORMAT_MAP
+    # Ebooks stop the directory walk at --limit (bounded scan). Magazines
+    # walk everything so Year/Decade pack detection sees complete packs.
+    bounded_scan = (not is_mag) and limit is not None and limit > 0
+    # Recursively collect all files (covers both top-level batches and year-subfolders).
+    # Skipped for bounded ebook scans — the collector below walks instead.
+    files: list[Path] = []
+    if not bounded_scan:
+        files = [p for p in dir_path.rglob("*") if p.is_file()]
 
     # Explicit CLI overrides: normalize and validate per category (overwrite scraped)
     fmt_override = format_.upper() if format_ else None
@@ -1060,15 +1111,21 @@ def up(
         lang_override = _lang_map.get(language.lower(), language)
     source_override = source  # Choice already canonical; None if not set
 
-    # Filter allowed
-    ebook_files = []
-    txt_found = []
-    for f in files:
-        ext = f.suffix.lower()
-        if ext in allowed:
-            ebook_files.append(f)
-        elif ext == ".txt":
-            txt_found.append(f)
+    # Filter allowed (bounded ebook scans stop the walk at --limit)
+    ebook_files: list[Path] = []
+    txt_found: list[Path] = []
+    hit_limit = False
+    total_files: int | None = None
+    if bounded_scan:
+        assert limit is not None
+        ebook_files, txt_found, hit_limit = _collect_batch_files(dir_path, allowed, limit)
+    else:
+        for f in files:
+            ext = f.suffix.lower()
+            if ext in allowed:
+                ebook_files.append(f)
+            elif ext == ".txt":
+                txt_found.append(f)
     if txt_found:
         click.secho(
             f"{FAIL_SYMBOL} Rejecting .txt files per I31 (no transcode): {[t.name for t in txt_found]}",
@@ -1080,42 +1137,64 @@ def up(
         )
         click.secho(f"{FAIL_SYMBOL} No {kinds} files found", fg="red")
         raise click.Abort()
-    ebook_files = sorted(ebook_files, key=lambda p: p.name.lower())
-    total_files = len(ebook_files)
-    if limit is not None and limit > 0 and total_files > limit:
-        if is_mag:
-            # Pack-aware slice: filename parse is cheap, so detect packs on the
-            # full list, then expand the cut to finish any open pack.
-            batch_set = set(ebook_files[:limit])
-            try:
-                for packs in (
-                    _detect_magazine_year_packs(ebook_files),
-                    _detect_magazine_decade_packs(ebook_files),
-                ):
-                    for pack_files in packs.values():
-                        if any(p in batch_set for p in pack_files):
-                            batch_set.update(pack_files)
-            except Exception:
-                pass
-            ebook_files = [p for p in ebook_files if p in batch_set]
-        else:
-            ebook_files = ebook_files[:limit]
-    shown = [f.name for f in ebook_files[:10]]
-    suffix = f" (+{len(ebook_files) - 10} more this run)" if len(ebook_files) > 10 else ""
-    click.secho(
-        f"{OK_SYMBOL} Found {total_files} {category} file(s), processing {len(ebook_files)} this run: {shown}{suffix}",
-        fg="green",
-    )
-    if total_files > len(ebook_files):
+    if bounded_scan:
+        shown = [f.name for f in ebook_files[:10]]
+        suffix = f" (+{len(ebook_files) - 10} more this run)" if len(ebook_files) > 10 else ""
         click.secho(
-            f"{SKIP_SYMBOL} {total_files - len(ebook_files)} file(s) remaining — rerun the same command for the next batch"
-            + (
-                " (note: --no-rename leaves files in place, so rerun repeats this batch)"
-                if no_rename
-                else ""
-            ),
-            fg="yellow",
+            f"{OK_SYMBOL} Found {category} file(s), processing {len(ebook_files)} this run"
+            f" (walk stopped at --limit {limit}): {shown}{suffix}",
+            fg="green",
         )
+        if hit_limit:
+            click.secho(
+                f"{SKIP_SYMBOL} Walk stopped at --limit {limit} — more files may remain,"
+                " rerun the same command for the next batch"
+                + (
+                    " (note: --no-rename leaves files in place, so rerun repeats this batch)"
+                    if no_rename
+                    else ""
+                ),
+                fg="yellow",
+            )
+    else:
+        ebook_files = sorted(ebook_files, key=lambda p: p.name.lower())
+        total_files = len(ebook_files)
+        hit_limit = bool(limit is not None and limit > 0 and total_files > limit)
+    if not bounded_scan and hit_limit:
+        # Magazines only reach here (ebook limits use the bounded walk above).
+        # Pack-aware slice: filename parse is cheap, so detect packs on the
+        # full list, then expand the cut to finish any open pack.
+        assert limit is not None
+        batch_set = set(ebook_files[:limit])
+        try:
+            for packs in (
+                _detect_magazine_year_packs(ebook_files),
+                _detect_magazine_decade_packs(ebook_files),
+            ):
+                for pack_files in packs.values():
+                    if any(p in batch_set for p in pack_files):
+                        batch_set.update(pack_files)
+        except Exception:
+            pass
+        ebook_files = [p for p in ebook_files if p in batch_set]
+    if not bounded_scan:
+        assert total_files is not None
+        shown = [f.name for f in ebook_files[:10]]
+        suffix = f" (+{len(ebook_files) - 10} more this run)" if len(ebook_files) > 10 else ""
+        click.secho(
+            f"{OK_SYMBOL} Found {total_files} {category} file(s), processing {len(ebook_files)} this run: {shown}{suffix}",
+            fg="green",
+        )
+        if total_files > len(ebook_files):
+            click.secho(
+                f"{SKIP_SYMBOL} {total_files - len(ebook_files)} file(s) remaining — rerun the same command for the next batch"
+                + (
+                    " (note: --no-rename leaves files in place, so rerun repeats this batch)"
+                    if no_rename
+                    else ""
+                ),
+                fg="yellow",
+            )
 
     # Group detection pre-flight (ebooks only — magazines are individual issues).
     # Per-group decision (docs/ux-improvements.md §3.6) instead of aborting the
@@ -3011,10 +3090,14 @@ def up(
             continue
 
     click.secho("\n" + "=" * 60, fg="cyan")
-    remaining = total_files - len(ebook_files)
-    remaining_note = (
-        f" {remaining} file(s) remaining — rerun the same command." if remaining > 0 else ""
-    )
+    if total_files is None:
+        # Bounded scan: total unknown, only whether the walk hit the cap.
+        remaining_note = " More files may remain — rerun the same command." if hit_limit else ""
+    else:
+        remaining = total_files - len(ebook_files)
+        remaining_note = (
+            f" {remaining} file(s) remaining — rerun the same command." if remaining > 0 else ""
+        )
     if dry_run:
         color = "green" if failed == 0 else "yellow"
         click.secho(

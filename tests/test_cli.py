@@ -708,7 +708,7 @@ def _make_batch(tmp_path, n=3):
 
 
 def test_cli_up_limit_slices_batch(tmp_path, monkeypatch):
-    """--limit 1 of 3 processes only the first sorted file + rerun hint."""
+    """--limit 1 of 3 processes only the first files + rerun hint."""
     from simurg.metadata import enricher
 
     monkeypatch.setattr(enricher, "search_all_scrapers", lambda inbuilt, session=None: [])
@@ -726,7 +726,7 @@ def test_cli_up_limit_slices_batch(tmp_path, monkeypatch):
         result = runner.invoke(cli, ["up", "batch", "--dry-run", "--limit", "1"])
         assert result.exit_code == 0, result.output
         assert "processing 1 this run" in result.output
-        assert "remaining — rerun the same command" in result.output
+        assert "Walk stopped at --limit 1" in result.output
         assert len(list(Path(".torrents").glob("*.torrent"))) == 1
 
 
@@ -749,5 +749,53 @@ def test_cli_up_limit_zero_unlimited(tmp_path, monkeypatch):
         result = runner.invoke(cli, ["up", "batch", "--dry-run", "--limit", "0"])
         assert result.exit_code == 0, result.output
         assert "processing 3 this run" in result.output
-        assert "remaining — rerun" not in result.output
+        assert "Walk stopped" not in result.output
         assert len(list(Path(".torrents").glob("*.torrent"))) == 3
+
+
+def test_cli_up_bounded_scan_skips_rglob(tmp_path, monkeypatch):
+    """Bounded ebook scan never does a full recursive walk (early stop)."""
+    from simurg.metadata import enricher
+
+    monkeypatch.setattr(enricher, "search_all_scrapers", lambda inbuilt, session=None: [])
+
+    def _no_rglob(self, *args, **kwargs):
+        raise AssertionError("bounded scan must not call Path.rglob")
+
+    monkeypatch.setattr(Path, "rglob", _no_rglob)
+
+    batch = _make_batch(tmp_path, n=5)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[directory]\ndottorrents_dir = ".torrents"\n\n[tracker.simurg]\nsession=""\n')
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        import shutil
+
+        shutil.copytree(str(batch), "batch")
+        Path("config.toml").write_text(cfg.read_text())
+        result = runner.invoke(cli, ["up", "batch", "--dry-run", "--limit", "2"])
+        assert result.exit_code == 0, result.output
+        assert "processing 2 this run" in result.output
+        assert len(list(Path(".torrents").glob("*.torrent"))) == 2
+
+
+def test_collect_batch_files_early_stop(tmp_path):
+    """Collector stops at the cap and sorts only the batch."""
+    from simurg.cli import _collect_batch_files
+
+    for i in range(10):
+        (tmp_path / f"book-{i:02d}.epub").write_bytes(b"x" * 100)
+    (tmp_path / "notes.txt").write_bytes(b"x" * 100)
+
+    files, txt, hit = _collect_batch_files(tmp_path, {".epub"}, 3)
+    assert hit is True
+    assert len(files) == 3
+    assert files == sorted(files, key=lambda p: p.name.lower())
+    # Walk stopped at the cap before reaching notes.txt (early stop proof)
+    assert txt == []
+
+    files_all, txt_all, hit_all = _collect_batch_files(tmp_path, {".epub"}, 0)
+    assert hit_all is False
+    assert len(files_all) == 10
+    assert [t.name for t in txt_all] == ["notes.txt"]
