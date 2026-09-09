@@ -294,16 +294,13 @@ def build_metadata(
     )
     # scraper edition year (Release)
     scraper_edition_year = scraper.get("publish_year") or scraper.get("year")
-    # First Published (Publication) — work year only, never guess from edition
+    # First Published (Publication) — work year; missing work year backfills from edition year.
     first_published = scraper_work_year
-    # Fall back: if no work year but edition year exists and inbuilt also has same year,
-    # leave as None to force human review rather than silently duplicating edition year.
-    # Only copy edition year to work year as last resort when explicitly no other source
-    # is available and the value is not just the file year duplication (avoid false 2021).
-    # For MVP we leave first_published None if only edition year exists — validate will flag.
 
     # Release year (edition) — prefer file truth, then scraper edition
     release_year = inbuilt_year or scraper_edition_year
+    if first_published is None:
+        first_published = release_year
 
     # Publisher — file is edition truth per docs/ebook.txt:372 (evidence priority: file > catalogue)
     publisher = inbuilt.get("publisher") or scraper.get("publisher") or "Unknown Publisher"

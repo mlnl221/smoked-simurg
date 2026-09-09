@@ -98,6 +98,14 @@ def test_build_metadata_fallback_filepath():
     assert md["format"] == "PDF"
 
 
+def test_build_metadata_year_backfills_from_edition_year():
+    inbuilt = {"title": "X", "authors": ["A"]}
+    scraper = {"title": "X", "authors": ["A"], "year": 2022}
+    md = build_metadata(inbuilt, scraper, "epub")
+    assert md["year"] == 2022
+    assert md["remaster_year"] == 2022
+
+
 def test_build_metadata_page_count_prefers_scraper():
     # For EPUB (reflowable estimate) scraper wins; for PDF file wins (exact).
     # EPUB: scraper print count preferred over 250wpp estimate.
