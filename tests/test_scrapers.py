@@ -155,6 +155,52 @@ def test_googlebooks_description_cleaned(monkeypatch):
     assert res["description"] == "A & B Second line padded"
 
 
+def test_googlebooks_description_preserves_paragraphs(monkeypatch):
+    sc = GoogleBooksScraper()
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        return DummyResponse(
+            {
+                "items": [
+                    {
+                        "volumeInfo": {
+                            "title": "Para Book",
+                            "description": "<div><p>First.</p><h3>Header</h3><p>Second <em>x</em>.</p></div>",
+                            "industryIdentifiers": [
+                                {"type": "ISBN_13", "identifier": "9780000000001"}
+                            ],
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    res = sc.search_isbn("9780000000001")
+    assert res["description"] == "First.\n\nHeader\n\nSecond x."
+    assert "<" not in res["description"]
+
+
+def test_googlebooks_viewapi_description_cleaned(monkeypatch):
+    sc = GoogleBooksScraper()
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        if "volumes" in str(url):
+            return DummyResponse({"items": []})
+        return DummyResponse(
+            {
+                "ISBN:9780000000003": {
+                    "title": "View Book",
+                    "description": "<p>View <b>desc</b></p><p>Para two.</p>",
+                }
+            }
+        )
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    res = sc.search_isbn("9780000000003")
+    assert res["description"] == "View desc\n\nPara two."
+
+
 def test_googlebooks_prefers_isbn13(monkeypatch):
     sc = GoogleBooksScraper()
 

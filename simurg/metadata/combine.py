@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from simurg.constants import GENRE_LEXICON, TAGS_MAX_LENGTH
+from simurg.metadata.scrapers.util import clean_description
 
 
 def _flip_last_first(name: str) -> str:
@@ -415,6 +416,7 @@ def build_metadata(
             or inbuilt.get("description")
             or ""
         )
+        raw_desc = clean_description(raw_desc) or ""
         suggested = suggest_tags_from_description(
             raw_desc,
             title=canonical_title,
@@ -434,8 +436,8 @@ def build_metadata(
     synopsis = (
         scraper.get("description") or scraper.get("synopsis") or inbuilt.get("description") or ""
     )
+    synopsis = clean_description(synopsis) or ""
     if synopsis:
-        synopsis = synopsis.strip()
         # Truncate to ~2000 chars first 2 paragraphs
         paras = synopsis.split("\n\n")
         if len(paras) > 2:

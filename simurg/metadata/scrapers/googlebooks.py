@@ -10,7 +10,6 @@ cover thumbnail without any key.
 
 from __future__ import annotations
 
-import html
 import json
 import re
 from difflib import SequenceMatcher
@@ -52,14 +51,9 @@ def _upgrade_cover(image_links: dict) -> str | None:
 
 
 def _clean_description(desc) -> str | None:
-    if not desc:
-        return None
-    text = str(desc)
-    text = re.sub(r"<br\s*/?>", " ", text, flags=re.I)  # keep line breaks as spaces
-    text = re.sub(r"<[^>]+>", "", text)  # strip any remaining HTML tags
-    text = html.unescape(text)  # decode &amp; &quot; etc.
-    text = re.sub(r"\s+", " ", text).strip()
-    return text or None
+    from simurg.metadata.scrapers.util import clean_description
+
+    return clean_description(desc)
 
 
 class GoogleBooksScraper(BaseScraper):
@@ -253,7 +247,9 @@ class GoogleBooksScraper(BaseScraper):
                 "publishedDate": str(pd) if pd else None,
                 "pageCount": entry.get("page_count") or entry.get("pages"),
                 "categories": [s for s in subjects if s],
-                "description": entry.get("description") or entry.get("synopsis"),
+                "description": _clean_description(
+                    entry.get("description") or entry.get("synopsis")
+                ),
                 "imageLinks": (
                     {"thumbnail": entry["thumbnail_url"]} if entry.get("thumbnail_url") else {}
                 ),
