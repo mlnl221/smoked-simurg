@@ -5,6 +5,8 @@ from simurg.metadata.combine import (
     detect_edition,
     normalize_authors,
     strip_edition_from_canonical,
+    suggest_tags_from_description,
+    tags_are_sparse,
     validate_metadata,
 )
 
@@ -184,3 +186,60 @@ def test_validate_metadata_year_bounds():
         "source": "Retail",
     }
     assert validate_metadata(md3) == []
+
+
+def test_tags_are_sparse():
+    assert tags_are_sparse("") is True
+    assert tags_are_sparse([]) is True
+    assert tags_are_sparse("non.fiction") is True
+    assert tags_are_sparse("fantasy") is True
+    assert tags_are_sparse("fantasy, mystery") is False
+    assert tags_are_sparse(["fantasy", "mystery"]) is False
+
+
+def test_suggest_tags_fantasy_from_description():
+    desc = "A young wizard rides his dragon on a magical quest through an enchanted realm."
+    assert "fantasy" in suggest_tags_from_description(desc)
+
+
+def test_suggest_tags_skips_short_and_synth():
+    assert suggest_tags_from_description("") == ""
+    assert suggest_tags_from_description("short") == ""
+    synth = "Dune by Frank Herbert (1965). Tags: non.fiction. Uploaded via smoked-simurg."
+    assert suggest_tags_from_description(synth) == ""
+
+
+def test_suggest_tags_excludes_existing_and_caps():
+    desc = "A detective solves a murder; a dragon circles a haunted castle."
+    existing = [f"tag{i}" for i in range(7)]
+    result = suggest_tags_from_description(desc, existing=existing)
+    assert len(result.split(", ")) <= 1
+    full = [f"tag{i}" for i in range(8)]
+    assert suggest_tags_from_description(desc, existing=full) == ""
+    # existing tags never re-suggested
+    assert "fantasy" not in suggest_tags_from_description(
+        "A wizard casts a spell.", existing="fantasy"
+    )
+
+
+def test_suggest_tags_never_forbidden():
+    desc = "The bestseller ebook retail pdf of the year, an awesome must-read."
+    result = suggest_tags_from_description(desc)
+    for bad in ("epub", "pdf", "retail", "bestseller", "awesome", "ebook"):
+        assert bad not in result.split(", ")
+
+
+def test_build_metadata_enriches_barren_tags():
+    scraper = {
+        "description": "A detective investigates a brutal murder in Victorian London.",
+        "first_publish_year": 2000,
+    }
+    md = build_metadata({"title": "T", "authors": ["A"]}, scraper, "epub")
+    assert md["tags"] != "non.fiction"
+    assert "mystery" in md["tags"] or "crime" in md["tags"]
+
+
+def test_build_metadata_keeps_rich_tags_untouched():
+    scraper = {"subjects": ["Fantasy", "History"], "first_publish_year": 2000}
+    md = build_metadata({"title": "T", "authors": ["A"]}, scraper, "epub")
+    assert md["tags"] == "fantasy, history"

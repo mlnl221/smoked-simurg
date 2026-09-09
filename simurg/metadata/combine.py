@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from simurg.constants import GENRE_LEXICON
+
 
 def _flip_last_first(name: str) -> str:
     """Convert 'Last, First' to 'First Last' for display. e.g. 'Defoe, Daniel' -> 'Daniel Defoe', 'Card, Orson Scott' -> 'Orson Scott Card'."""
@@ -121,6 +123,61 @@ def clean_tags(subjects) -> str:
             seen.add(t)
             uniq.append(t)
     return ", ".join(uniq[:8])  # limit
+
+
+def tags_are_sparse(tags) -> bool:
+    """True when tag suggestion should kick in: empty, non.fiction fallback, or <2 tags."""
+    if not tags:
+        return True
+    items = [t.strip() for t in (tags if isinstance(tags, list) else str(tags).split(","))]
+    items = [t for t in items if t]
+    if not items:
+        return True
+    if len(items) == 1 and items[0].lower() == "non.fiction":
+        return True
+    return len(items) < 2
+
+
+def suggest_tags_from_description(
+    description: str | None,
+    title: str = "",
+    subjects: list[str] | tuple = (),
+    existing: str | list = "",
+) -> str:
+    """Suggest tracker tags by matching description text against GENRE_LEXICON.
+
+    Returns a comma string of NEW tags only (excluding `existing`), capped so
+    existing + new fits the 8-tag limit. Returns "" when there is nothing
+    useful to match (empty/short/synthesized descriptions).
+    """
+    if not description or len(str(description).strip()) < 10:
+        return ""
+    # Skip internally synthesized fallbacks, not real flap copy.
+    if "uploaded via smoked-simurg" in str(description).lower():
+        return ""
+    if isinstance(existing, list):
+        existing_items = [str(t).strip().lower() for t in existing if str(t).strip()]
+    else:
+        existing_items = [t.strip().lower() for t in str(existing).split(",") if t.strip()]
+    existing_set = set(existing_items)
+    slots = 8 - len(existing_set)
+    if slots <= 0:
+        return ""
+    parts = [str(title or ""), str(description)]
+    parts.extend(str(s) for s in (subjects or []) if s)
+    blob = " ".join(parts).lower()
+    scored: list[tuple[int, int, str]] = []
+    for order, (tag, triggers) in enumerate(GENRE_LEXICON.items()):
+        if tag.lower() in existing_set:
+            continue
+        score = 0
+        for phrase in triggers:
+            score += len(re.findall(r"\b" + re.escape(phrase.lower()) + r"\b", blob))
+        if score > 0:
+            scored.append((score, order, tag))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    # ponytail: first-match-wins ranking, no TF-IDF weighting until lexicon misses real books
+    return clean_tags([tag for _, _, tag in scored[:slots]])
 
 
 def strip_edition_from_canonical(title: str) -> str:
@@ -330,13 +387,29 @@ def build_metadata(
             page_count = None
     else:
         page_count = None
-    # Tags - must be before synopsis fallback
+    # Tags - enriched from description when scraper subjects are sparse
     tags = scraper.get("tags") or clean_tags(
         scraper.get("subjects") or scraper.get("subject") or []
     )
     if isinstance(tags, list):
         tags = clean_tags(tags)
-    # Fallback tags if empty — tracker requires at least one
+    if tags_are_sparse(tags):
+        raw_desc = (
+            scraper.get("description")
+            or scraper.get("synopsis")
+            or inbuilt.get("description")
+            or ""
+        )
+        suggested = suggest_tags_from_description(
+            raw_desc,
+            title=canonical_title,
+            subjects=scraper.get("subjects") or scraper.get("subject") or [],
+            existing=tags,
+        )
+        if suggested:
+            merged = [t.strip() for t in f"{tags}, {suggested}".split(",") if t.strip()]
+            tags = clean_tags(merged)
+    # Fallback tags if still empty — tracker requires at least one
     if not tags or not tags.strip():
         # Try to infer from title/author, else generic
         # Use non.fiction as safe default for books without tags

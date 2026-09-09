@@ -13,6 +13,8 @@ import sys
 
 import click
 
+from simurg.metadata.combine import clean_tags, suggest_tags_from_description, tags_are_sparse
+
 # User-editable projection for the whole-dict JSON edit. Internal keys
 # (cover_path, source_urls, format, type, image, ...) are intentionally
 # excluded so the user cannot clobber upload wiring.
@@ -235,6 +237,28 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
     is_pack = is_mag and (metadata.get("release_type") or "Individual Issue") != "Individual Issue"
     if is_pack:
         editable = MAGAZINE_EDITABLE + PACK_EDITABLE
+
+    # Auto-append description-derived tags for ebooks with sparse tags.
+    # Magazines keep their `magazine` fallback; build_metadata already ran the
+    # same suggestion on the raw description, this catches user-edited ones.
+    if not is_mag and tags_are_sparse(metadata.get("tags") or ""):
+        desc = metadata.get("album_desc") or metadata.get("description") or ""
+        suggested = suggest_tags_from_description(
+            desc,
+            title=metadata.get("title") or "",
+            existing=metadata.get("tags") or "",
+        )
+        if suggested:
+            existing = metadata.get("tags")
+            was_list = isinstance(existing, list)
+            base = [
+                str(t).strip() for t in (existing if was_list else str(existing or "").split(","))
+            ]
+            merged = clean_tags([t for t in base + suggested.split(", ") if t.strip()])
+            metadata["tags"] = (
+                [t.strip() for t in merged.split(", ") if t.strip()] if was_list else merged
+            )
+            click.secho(f"auto-added tags from description: {suggested}", fg="green")
 
     if is_mag:
         edit_functions = {
