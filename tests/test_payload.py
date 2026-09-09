@@ -196,3 +196,18 @@ def test_tags_string_passthrough_and_empty():
     assert compile_data_new_publication(md, None)["tags"] == "fantasy, sci.fi"
     md = {"title": "T", "tags": ["fiction", " ", "west"]}
     assert compile_data_new_publication(md, None)["tags"] == "fiction, west"
+
+
+def test_tags_trimmed_to_tracker_200_limit():
+    # Regression: Djinn upload failed with 203 chars of tags.
+    tags = (
+        "english.fantasy.fiction, fairy.tales, fiction.short.stories.single.author, "
+        "england.fiction, fiction.fantasy.short.stories, "
+        "fiction.fantasy.collections..anthologies, women.authors, new.york.times.reviewed"
+    )
+    assert len(tags) > 200
+    out = compile_data_new_publication({"title": "T", "tags": tags}, None)["tags"]
+    assert len(out) <= 200
+    assert out.startswith("english.fantasy.fiction")
+    out_list = compile_data_new_publication({"title": "T", "tags": tags.split(", ")}, None)["tags"]
+    assert len(out_list) <= 200

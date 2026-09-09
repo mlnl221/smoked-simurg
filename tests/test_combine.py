@@ -3,6 +3,7 @@ from simurg.metadata.combine import (
     clean_isbn,
     clean_tags,
     detect_edition,
+    fit_tags_to_limit,
     normalize_authors,
     strip_edition_from_canonical,
     suggest_tags_from_description,
@@ -243,3 +244,36 @@ def test_build_metadata_keeps_rich_tags_untouched():
     scraper = {"subjects": ["Fantasy", "History"], "first_publish_year": 2000}
     md = build_metadata({"title": "T", "authors": ["A"]}, scraper, "epub")
     assert md["tags"] == "fantasy, history"
+
+
+def test_clean_tags_collapses_dots_and_strips_edges():
+    assert clean_tags(["Fiction Fantasy Collections / Anthologies"]) == (
+        "fiction.fantasy.collections.anthologies"
+    )
+    assert clean_tags([" --Foo  Bar-- "]) == "foo.bar"
+
+
+def test_clean_tags_trims_to_200_chars():
+    # Regression: Djinn subjects produced 203 chars, tracker limit is 200.
+    subjects = [
+        "English Fantasy Fiction",
+        "Fairy Tales",
+        "Fiction Short Stories Single Author",
+        "England Fiction",
+        "Fiction Fantasy Short Stories",
+        "Fiction Fantasy Collections / Anthologies",
+        "Women Authors",
+        "New York Times Reviewed",
+    ]
+    tags = clean_tags(subjects)
+    assert ".." not in tags
+    assert len(tags) <= 200
+    assert tags.startswith("english.fantasy.fiction")
+
+
+def test_fit_tags_to_limit_drops_trailing_keeps_first():
+    tags = ["a" * 90, "b" * 90, "c" * 90]
+    assert fit_tags_to_limit(tags) == ["a" * 90, "b" * 90]
+    assert fit_tags_to_limit([]) == []
+    single = fit_tags_to_limit(["x" * 250])
+    assert len(single) == 1 and len(single[0]) == 200

@@ -36,6 +36,10 @@ SOURCE_LABELS = {"Retail", "Scan", "OCR", "Convert", "Other"}
 # Forbidden tags per rules.txt:53 + tracker rules
 FORBIDDEN_TAGS = {"epub", "pdf", "mobi", "scan", "retail", "azw3", "djvu"}
 
+# Tracker tags field limit: upload.php rejects tags strings over 200 chars
+# ("You must enter at least one tag. Maximum length is 200 characters.").
+TAGS_MAX_LENGTH = 200
+
 # Genre/theme lexicon for description-derived tag suggestions.
 # Key = final tracker tag form (lowercase, dots). Values = lowercase trigger
 # phrases matched with word boundaries against description + title + subjects.

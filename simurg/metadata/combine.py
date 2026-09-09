@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from simurg.constants import GENRE_LEXICON
+from simurg.constants import GENRE_LEXICON, TAGS_MAX_LENGTH
 
 
 def _flip_last_first(name: str) -> str:
@@ -112,6 +112,8 @@ def clean_tags(subjects) -> str:
         t = str(s).strip().lower()
         t = re.sub(r"\s+", ".", t)
         t = re.sub(r"[^a-z0-9\.\-]", "", t)
+        t = re.sub(r"\.{2,}", ".", t)  # "Collections / Anthologies" -> no ".."
+        t = t.strip(".-")
         if t and t not in _forbidden:
             # avoid forbidden tags - skip if exact match
             tags.append(t)
@@ -122,7 +124,20 @@ def clean_tags(subjects) -> str:
         if t not in seen:
             seen.add(t)
             uniq.append(t)
-    return ", ".join(uniq[:8])  # limit
+    return ", ".join(fit_tags_to_limit(uniq[:8]))  # count + 200-char limits
+
+
+def fit_tags_to_limit(uniq: list[str], limit: int = TAGS_MAX_LENGTH) -> list[str]:
+    """Drop trailing tags until the joined string fits the tracker limit.
+
+    Keeps at least one tag; a single pathological tag is hard-truncated.
+    """
+    uniq = [t for t in uniq if t]
+    while len(uniq) > 1 and len(", ".join(uniq)) > limit:
+        uniq = uniq[:-1]
+    if uniq and len(", ".join(uniq)) > limit:
+        uniq = [", ".join(uniq)[:limit]]
+    return uniq
 
 
 def tags_are_sparse(tags) -> bool:
