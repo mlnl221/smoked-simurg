@@ -34,7 +34,57 @@ def _fuzzy(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 
-def _tag_result(res: dict, scraper_name: str, title: str, authors: list[str]) -> None:
+# Weighting: title dominates, author matters, edition year breaks ties.
+# Junk cutoffs punish unrelated works (wrong title/author get dropped).
+_TITLE_WEIGHT = 0.5
+_AUTHOR_WEIGHT = 0.3
+_YEAR_WEIGHT = 0.2
+_TITLE_JUNK_CUTOFF = 0.5
+_AUTHOR_JUNK_CUTOFF = 0.4
+
+
+def _extract_year(inbuilt: dict) -> int | None:
+    """Pull the inbuilt edition year as an int, tolerating str/date forms."""
+    for key in ("year", "publish_year"):
+        y = inbuilt.get(key)
+        if isinstance(y, int) and 1000 <= y <= 2100:
+            return y
+        if isinstance(y, str):
+            m = re.search(r"(\d{4})", y)
+            if m and 1000 <= int(m.group(1)) <= 2100:
+                return int(m.group(1))
+    return None
+
+
+def _fuzzy_year(query_year: int | None, result: dict) -> float:
+    """Soft year score: exact=1.0, ±1=0.6, ±2=0.3, then linear decay.
+
+    Unknown query or result year is neutral (0.5) — never punished, never
+    preferred. Wrong years are down-ranked, never hidden.
+    """
+    if not query_year:
+        return 0.5
+    raw = result.get("year") or result.get("publish_year")
+    try:
+        diff = abs(int(query_year) - int(str(raw)[:4] if isinstance(raw, str) else raw))
+    except (TypeError, ValueError):
+        return 0.5
+    if diff == 0:
+        return 1.0
+    if diff == 1:
+        return 0.6
+    if diff == 2:
+        return 0.3
+    return max(0.0, 1.0 - diff / 10.0)
+
+
+def _tag_result(
+    res: dict,
+    scraper_name: str,
+    title: str,
+    authors: list[str],
+    year: int | None = None,
+) -> None:
     """Attach provenance + fuzzy-match scores to a scraper result (in place)."""
     res["_scraper"] = scraper_name
     res["_fuzzy_title"] = 1.0
@@ -43,6 +93,33 @@ def _tag_result(res: dict, scraper_name: str, title: str, authors: list[str]) ->
         res["_fuzzy_title"] = _fuzzy(title, res.get("title") or "")
     if authors and res.get("authors"):
         res["_fuzzy_author"] = max(_fuzzy(a1, a2) for a1 in authors for a2 in res["authors"])
+    res["_fuzzy_year"] = _fuzzy_year(year, res)
+    res["_score"] = (
+        _TITLE_WEIGHT * res["_fuzzy_title"]
+        + _AUTHOR_WEIGHT * res["_fuzzy_author"]
+        + _YEAR_WEIGHT * res["_fuzzy_year"]
+    )
+
+
+def _is_junk(res: dict, authors_known: bool) -> bool:
+    """True when the result is unrelated to the query (punish random works)."""
+    if res.get("_fuzzy_title", 0) < _TITLE_JUNK_CUTOFF:
+        return True
+    return bool(authors_known) and res.get("_fuzzy_author", 0) < _AUTHOR_JUNK_CUTOFF
+
+
+def _result_score(res: dict) -> float:
+    if "_score" in res:
+        return float(res["_score"])
+    return float(res.get("_fuzzy_title", 0)) + float(res.get("_fuzzy_author", 0))
+
+
+def _call_title_author(sc, title: str, authors: list[str], year: int | None):
+    """Call search_title_author with year, tolerating old two-arg mocks."""
+    try:
+        return sc.search_title_author(title, authors, year=year)
+    except TypeError:
+        return sc.search_title_author(title, authors)
 
 
 def _clean_isbn(isbn) -> str | None:
@@ -124,6 +201,7 @@ def search_all_scrapers(
     title = (inbuilt.get("title") or "").strip()
     authors = inbuilt.get("authors") or []
     isbn = _clean_isbn(inbuilt.get("isbn"))
+    year = _extract_year(inbuilt)
     session = session or requests.Session()
     scrapers = _scrapers_for(session, categories or {"ebook"})
 
@@ -137,7 +215,7 @@ def search_all_scrapers(
             except Exception:
                 continue
             if res and res.get("title"):
-                _tag_result(res, sc.name, title, authors)
+                _tag_result(res, sc.name, title, authors, year)
                 isbn_results.append(res)
         results.extend(isbn_results)
 
@@ -152,12 +230,17 @@ def search_all_scrapers(
         if title:
             for sc in scrapers:
                 try:
-                    res = sc.search_title_author(title, authors)
+                    res = _call_title_author(sc, title, authors, year)
                 except Exception:
                     continue
-                if res and res.get("title"):
-                    _tag_result(res, sc.name, title, authors)
-                    results.append(res)
+                # Scrapers may return several edition hits (Google Books).
+                hits = res if isinstance(res, list) else [res]
+                for hit in hits:
+                    if hit and hit.get("title"):
+                        _tag_result(hit, sc.name, title, authors, year)
+                        if _is_junk(hit, bool(authors)):
+                            continue
+                        results.append(hit)
     return results
 
 
@@ -180,12 +263,14 @@ def search_custom(
     results: list[dict] = []
     for sc in scrapers:
         try:
-            res = sc.search_title_author(query, [])
+            res = _call_title_author(sc, query, [], None)
         except Exception:
             continue
-        if res and res.get("title"):
-            _tag_result(res, sc.name, query, [])
-            results.append(res)
+        hits = res if isinstance(res, list) else [res]
+        for hit in hits:
+            if hit and hit.get("title"):
+                _tag_result(hit, sc.name, query, [])
+                results.append(hit)
     return results
 
 
@@ -221,7 +306,7 @@ def rank_results(results: list[dict]) -> dict | None:
     """Return the best-ranked hit (provenance tags stripped) or None."""
     if not results:
         return None
-    best = max(results, key=lambda x: x.get("_fuzzy_title", 0) + x.get("_fuzzy_author", 0))
+    best = max(results, key=_result_score)
     return {k: v for k, v in best.items() if not k.startswith("_")}
 
 
@@ -336,7 +421,7 @@ def enrich_metadata(inbuilt: dict, session: requests.Session | None = None) -> d
         return rank_results(high_conf) or {}
     # No ISBN: require both title and author confidence (when author known).
     authors = inbuilt.get("authors") or []
-    best = max(candidates, key=lambda x: x.get("_fuzzy_title", 0) + x.get("_fuzzy_author", 0))
+    best = max(candidates, key=_result_score)
     bt = best.get("_fuzzy_title", 0)
     ba = best.get("_fuzzy_author", 0)
     if bt >= 0.7 and (ba >= 0.7 if authors else True):

@@ -108,15 +108,19 @@ class GoogleBooksScraper(BaseScraper):
             return None
         return self._parse_volume(vi, preferred_isbn=cleaned)
 
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
+    def search_title_author(
+        self, title: str, authors: list[str], year: int | None = None
+    ) -> dict | list[dict] | None:
         q = f"intitle:{title}"
         if authors:
             q += f" inauthor:{authors[0]}"
-        items = self._api_get_items({"q": q, "maxResults": 5})
-        vi = self._best_title_match(items, title)
-        if vi is None:
+        items = self._api_get_items({"q": q, "maxResults": 10})
+        editions = self._best_editions(items, title, authors, year, limit=3)
+        if not editions:
             return None
-        return self._parse_volume(vi)
+        if len(editions) == 1:
+            return editions[0]
+        return editions
 
     # -- API parsing ---------------------------------------------------------
 
@@ -134,16 +138,80 @@ class GoogleBooksScraper(BaseScraper):
         return items[0].get("volumeInfo", {})
 
     @staticmethod
-    def _best_title_match(items: list, title: str):
+    def _best_title_match(items: list, title: str, year: int | None = None):
         if not items:
             return None
-        best, best_score = None, -1.0
+        best, best_key = None, None
         for it in items:
             vi = it.get("volumeInfo", {})
             score = _fuzzy(title, vi.get("title") or "")
-            if score > best_score:
-                best, best_score = vi, score
+            key = (score, -GoogleBooksScraper._year_distance(year, vi))
+            if best_key is None or key > best_key:
+                best, best_key = vi, key
         return best
+
+    @staticmethod
+    def _year_distance(query_year: int | None, vi: dict) -> float:
+        """Absolute year distance for tie-breaking; unknown years sort last."""
+        if not query_year:
+            return 0.0
+        m = re.search(r"(\d{4})", str(vi.get("publishedDate") or ""))
+        if not m:
+            return 999.0
+        try:
+            return abs(query_year - int(m.group(1)))
+        except ValueError:
+            return 999.0
+
+    @staticmethod
+    def _best_editions(
+        items: list,
+        title: str,
+        authors: list[str],
+        year: int | None = None,
+        limit: int = 3,
+    ) -> list[dict]:
+        """Parse volumes into up to ``limit`` distinct-year edition dicts.
+
+        Junk volumes (title similarity < 0.5, or author < 0.4 when authors are
+        known) are dropped. Survivors are ranked by title similarity, then by
+        closeness to the inbuilt edition ``year``; only the first hit per
+        distinct year is kept so the picker shows different editions.
+        """
+        if not items:
+            return []
+        scored: list[tuple[tuple, dict]] = []
+        for it in items:
+            vi = it.get("volumeInfo", {}) if isinstance(it, dict) else {}
+            if not vi.get("title"):
+                continue
+            t_score = _fuzzy(title, vi.get("title") or "")
+            if t_score < 0.5:
+                continue
+            if authors and vi.get("authors"):
+                a_score = max(
+                    (_fuzzy(a1, a2) for a1 in authors for a2 in vi["authors"]),
+                    default=0.0,
+                )
+                if a_score < 0.4:
+                    continue
+            parsed = GoogleBooksScraper._parse_volume(vi)
+            if not parsed:
+                continue
+            key = (t_score, -GoogleBooksScraper._year_distance(year, vi))
+            scored.append((key, parsed))
+        scored.sort(key=lambda kv: kv[0], reverse=True)
+        out: list[dict] = []
+        seen_years: set = set()
+        for _, parsed in scored:
+            y = parsed.get("year")
+            if y in seen_years:
+                continue
+            seen_years.add(y)
+            out.append(parsed)
+            if len(out) >= limit:
+                break
+        return out
 
     # -- keyless viewapi fallback -------------------------------------------
 
@@ -197,7 +265,8 @@ class GoogleBooksScraper(BaseScraper):
 
     # -- shared volume -> result mapping ------------------------------------
 
-    def _parse_volume(self, vi, preferred_isbn: str | None = None) -> dict | None:
+    @staticmethod
+    def _parse_volume(vi, preferred_isbn: str | None = None) -> dict | None:
         if not vi or not vi.get("title"):
             return None
         title = vi.get("title")

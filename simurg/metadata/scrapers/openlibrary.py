@@ -68,7 +68,9 @@ class OpenLibraryScraper(BaseScraper):
             pass
         return None
 
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
+    def search_title_author(
+        self, title: str, authors: list[str], year: int | None = None
+    ) -> dict | None:
         q = title
         if authors:
             q += " " + " ".join(authors[:2])

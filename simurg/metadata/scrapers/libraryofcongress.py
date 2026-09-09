@@ -15,7 +15,7 @@ class LibraryOfCongressScraper(BaseScraper):
     def search_isbn(self, isbn: str):
         return None
 
-    def search_title_author(self, title: str, authors: list[str]):
+    def search_title_author(self, title: str, authors: list[str], year: int | None = None):
         return None
 
     def search_magazine(self, title: str, issue: dict | None = None) -> dict | None:

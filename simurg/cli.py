@@ -533,6 +533,8 @@ def _format_scraper_result(res: dict, idx: int) -> str:
         match.append(f"t={res['_fuzzy_title']:.2f}")
     if res.get("_fuzzy_author") is not None:
         match.append(f"a={res['_fuzzy_author']:.2f}")
+    if res.get("_fuzzy_year") is not None:
+        match.append(f"y={res['_fuzzy_year']:.2f}")
     if match:
         line += f" [{' '.join(match)}]"
     prefix = f"  [{idx}] {scraper} {line}"
@@ -720,9 +722,9 @@ def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str 
     """
     title = (inbuilt.get("title") or "").strip()
     authors = inbuilt.get("authors") or []
-    ranked = sorted(
-        results, key=lambda x: x.get("_fuzzy_title", 0) + x.get("_fuzzy_author", 0), reverse=True
-    )
+    from simurg.metadata.enricher import _result_score
+
+    ranked = sorted(results, key=_result_score, reverse=True)
     click.secho(
         "\nScraper results — pick which metadata to use to fill in the missing fields:",
         fg="cyan",
