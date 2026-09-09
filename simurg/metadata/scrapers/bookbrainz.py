@@ -23,7 +23,9 @@ class BookBrainzScraper(BaseScraper):
         cleaned = re.sub(r"[^0-9Xx]", "", isbn)
         return self._search(cleaned)
 
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
+    def search_title_author(
+        self, title: str, authors: list[str], year: int | None = None
+    ) -> dict | None:
         q = title
         if authors:
             q += " " + " ".join(str(a) for a in authors[:2])

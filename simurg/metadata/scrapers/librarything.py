@@ -122,7 +122,9 @@ class LibraryThingScraper(BaseScraper):
         ck = self._fetch_ck(work_id)
         return _build_ebook_result(best, ck, source="librarything")
 
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
+    def search_title_author(
+        self, title: str, authors: list[str], year: int | None = None
+    ) -> dict | None:
         q = title or ""
         if authors:
             q += " " + " ".join(str(a) for a in authors[:2])

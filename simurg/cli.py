@@ -36,7 +36,7 @@ def _sanitize_filename(name: str) -> str:
     return re.sub(BLACKLISTED_CHARS, "_", name)
 
 
-def _rate_limit_wait(seconds: int = 15, label: str = "") -> None:
+def _rate_limit_wait(seconds: int = 7, label: str = "") -> None:
     """Visible countdown wait (docs/ux-improvements.md §3.2).
 
     Rewrites one line in place; Ctrl+C offers to skip the remaining wait
@@ -533,6 +533,8 @@ def _format_scraper_result(res: dict, idx: int) -> str:
         match.append(f"t={res['_fuzzy_title']:.2f}")
     if res.get("_fuzzy_author") is not None:
         match.append(f"a={res['_fuzzy_author']:.2f}")
+    if res.get("_fuzzy_year") is not None:
+        match.append(f"y={res['_fuzzy_year']:.2f}")
     if match:
         line += f" [{' '.join(match)}]"
     prefix = f"  [{idx}] {scraper} {line}"
@@ -720,9 +722,9 @@ def _prompt_scraper_selection(results: list[dict], inbuilt: dict) -> dict | str 
     """
     title = (inbuilt.get("title") or "").strip()
     authors = inbuilt.get("authors") or []
-    ranked = sorted(
-        results, key=lambda x: x.get("_fuzzy_title", 0) + x.get("_fuzzy_author", 0), reverse=True
-    )
+    from simurg.metadata.enricher import _result_score
+
+    ranked = sorted(results, key=_result_score, reverse=True)
     click.secho(
         "\nScraper results — pick which metadata to use to fill in the missing fields:",
         fg="cyan",
@@ -1217,8 +1219,6 @@ def up(
                 )
                 # Process each pack as one torrent (multi-file directory)
                 for pack_idx, ((_, pack_key), pack_files) in enumerate(sorted(packs.items())):
-                    if pack_idx > 0 and not dry_run:
-                        _rate_limit_wait(15, label=f"(pack {pack_idx + 1}/{len(packs)})")
                     # Canonical display from first file
                     from simurg.metadata.magazine import decode_magazine_filename
                     from simurg.metadata.scrapers.util import issue_label as _issue_label_util
@@ -1677,6 +1677,10 @@ def up(
                             category=category,
                         )
                         uploaded += 1
+                        # Rate-limit only after an actual upload (never on skip/delete/fail),
+                        # and never after the last pack.
+                        if not dry_run and pack_idx < len(packs) - 1:
+                            _rate_limit_wait(7, label=f"(pack {pack_idx + 1}/{len(packs)})")
                     except click.Abort:
                         raise
                     except Exception as e:
@@ -1704,9 +1708,6 @@ def up(
                 return
 
     for idx, filepath in enumerate(ebook_files):
-        # Sleep between uploads to avoid rate limiting (15s) — skip for dry-run
-        if idx > 0 and not dry_run:
-            _rate_limit_wait(15, label=f"(file {idx + 1}/{len(ebook_files)})")
         click.secho("\n" + "=" * 60, fg="cyan")
         click.secho(f"Processing: {filepath.name}", fg="cyan", bold=True)
         ext = filepath.suffix.lower()
@@ -2955,6 +2956,10 @@ def up(
                 category=category,
             )
             uploaded += 1
+            # Rate-limit only after an actual upload (never on skip/delete/fail),
+            # and never after the last file.
+            if not dry_run and idx < len(ebook_files) - 1:
+                _rate_limit_wait(7, label=f"(file {idx + 1}/{len(ebook_files)})")
         except click.Abort:
             raise
         except Exception as e:

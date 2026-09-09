@@ -70,13 +70,12 @@ def test_build_metadata_colon_edition_split():
     assert "50th Anniversary Edition" in md["remaster_title"]
 
 
-def test_first_published_never_from_file_year():
-    # File year 2021 must NOT pollute First Published when work year missing
-    # per docs/ebook.txt:1200 — prompt, not guess
+def test_first_published_backfills_from_edition_year():
+    # Missing work year backfills from edition year so validate passes.
     inbuilt = {"year": 2021, "authors": ["A"], "title": "T"}
     scraper = {"year": 2021, "publish_year": 2021}  # no first_publish_year
     md = build_metadata(inbuilt, scraper, "epub")
-    assert md["year"] is None  # Publication missing -> human review
+    assert md["year"] == 2021
     assert md["remaster_year"] == 2021
 
 

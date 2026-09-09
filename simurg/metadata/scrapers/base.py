@@ -41,8 +41,15 @@ class BaseScraper(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def search_title_author(self, title: str, authors: list[str]) -> dict | None:
-        """Same contract as search_isbn, title+author query."""
+    def search_title_author(
+        self, title: str, authors: list[str], year: int | None = None
+    ) -> dict | list[dict] | None:
+        """Same contract as search_isbn, title+author query.
+
+        ``year`` is the inbuilt edition year when known (soft preference, never
+        a hard filter). Scrapers may ignore it; Google Books returns up to 3
+        distinct-year editions so the picker can show them.
+        """
         ...
 
     def search_magazine(self, title: str, issue: dict | None = None) -> dict | None:
