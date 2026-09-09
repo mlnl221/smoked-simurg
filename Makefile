@@ -14,7 +14,7 @@ help:
 	@echo "Usage:"
 	@echo "  make venv                          # create isolated .venv and install deps"
 	@echo "  make test                          # run pytest suite"
-	@echo "  make run DIR=/path/to/batch [ARGS=\"--dry-run\"]"
+	@echo "  make run DIR=/path/to/batch [ARGS=\"--dry-run --limit 50\"]"
 	@echo "  make checkconf                     # test tracker/auth + image hosts + scrapers"
 	@echo "  make health                        # check deps"
 	@echo "  make clean                         # remove caches"
@@ -25,7 +25,7 @@ help:
 	@echo "  .venv\\Scripts\\pip install -r requirements.txt  # Windows"
 	@echo "  .venv/bin/python -m simurg up ./my-batch --dry-run"
 
-# Usage: make run DIR=/path/to/batch [ARGS="--dry-run"]
+# Usage: make run DIR=/path/to/batch [ARGS="--dry-run --limit 50"]
 run:
 	@test -n "$(DIR)" || (echo "Usage: make run DIR=/path/to/batch [ARGS=\"--dry-run\"]" && exit 1)
 	$(PYTHON) -m simurg up "$(DIR)" $(ARGS)

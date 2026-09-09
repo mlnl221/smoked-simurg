@@ -15,6 +15,7 @@ import requests
 from simurg import __version__
 from simurg.constants import (
     ALLOWED_EXTENSIONS,
+    BATCH_LIMIT_DEFAULT,
     BLACKLISTED_CHARS,
     FAIL_SYMBOL,
     FORMAT_MAP,
@@ -996,6 +997,13 @@ def cli():
     default=None,
     help="Paste a book-page URL (openlibrary/googlebooks/bookbrainz/abebooks/archive.org/loc) to scrape metadata from directly, skipping the auto scraper search.",
 )
+@click.option(
+    "--limit",
+    type=int,
+    default=BATCH_LIMIT_DEFAULT,
+    show_default=True,
+    help="Max files processed per run (0 = unlimited). Processes the first N sorted files; rerun the same command for the next batch.",
+)
 def up(
     directory,
     dry_run,
@@ -1008,14 +1016,18 @@ def up(
     language,
     no_review,
     url,
+    limit,
 ):
     """Batch upload N unrelated files -> N torrents (ebooks or magazines).
+
+    Only the first --limit sorted files are processed per run; rerun the
+    same command for the next batch (processed files move to staging).
 
     Examples:
 
     \b
       python -m simurg up ./batch --dry-run
-      python -m simurg up ./batch --source Retail
+      python -m simurg up ./batch --source Retail --limit 50
       python -m simurg up ./mags --category magazines --no-review
     """
     dir_path = Path(directory)
@@ -1069,10 +1081,41 @@ def up(
         click.secho(f"{FAIL_SYMBOL} No {kinds} files found", fg="red")
         raise click.Abort()
     ebook_files = sorted(ebook_files, key=lambda p: p.name.lower())
+    total_files = len(ebook_files)
+    if limit is not None and limit > 0 and total_files > limit:
+        if is_mag:
+            # Pack-aware slice: filename parse is cheap, so detect packs on the
+            # full list, then expand the cut to finish any open pack.
+            batch_set = set(ebook_files[:limit])
+            try:
+                for packs in (
+                    _detect_magazine_year_packs(ebook_files),
+                    _detect_magazine_decade_packs(ebook_files),
+                ):
+                    for pack_files in packs.values():
+                        if any(p in batch_set for p in pack_files):
+                            batch_set.update(pack_files)
+            except Exception:
+                pass
+            ebook_files = [p for p in ebook_files if p in batch_set]
+        else:
+            ebook_files = ebook_files[:limit]
+    shown = [f.name for f in ebook_files[:10]]
+    suffix = f" (+{len(ebook_files) - 10} more this run)" if len(ebook_files) > 10 else ""
     click.secho(
-        f"{OK_SYMBOL} Found {len(ebook_files)} {category} file(s): {[f.name for f in ebook_files]}",
+        f"{OK_SYMBOL} Found {total_files} {category} file(s), processing {len(ebook_files)} this run: {shown}{suffix}",
         fg="green",
     )
+    if total_files > len(ebook_files):
+        click.secho(
+            f"{SKIP_SYMBOL} {total_files - len(ebook_files)} file(s) remaining — rerun the same command for the next batch"
+            + (
+                " (note: --no-rename leaves files in place, so rerun repeats this batch)"
+                if no_rename
+                else ""
+            ),
+            fg="yellow",
+        )
 
     # Group detection pre-flight (ebooks only — magazines are individual issues).
     # Per-group decision (docs/ux-improvements.md §3.6) instead of aborting the
@@ -2968,12 +3011,16 @@ def up(
             continue
 
     click.secho("\n" + "=" * 60, fg="cyan")
+    remaining = total_files - len(ebook_files)
+    remaining_note = (
+        f" {remaining} file(s) remaining — rerun the same command." if remaining > 0 else ""
+    )
     if dry_run:
         color = "green" if failed == 0 else "yellow"
         click.secho(
             f"{OK_SYMBOL if failed == 0 else WARN_SYMBOL} Summary: Dry-run — prepared "
             f"{uploaded}/{len(ebook_files)} (torrents in {dottorrents_dir}/, no uploads sent), "
-            f"skipped {skipped}, deleted {deleted}, failed {failed}",
+            f"skipped {skipped}, deleted {deleted}, failed {failed}.{remaining_note}",
             fg=color,
             bold=True,
         )
@@ -2982,7 +3029,7 @@ def up(
         sym = OK_SYMBOL if failed == 0 else WARN_SYMBOL
         click.secho(
             f"{sym} Summary: Uploaded {uploaded}/{len(ebook_files)}, skipped {skipped}, "
-            f"deleted {deleted}, failed {failed} — check {dottorrents_dir}/",
+            f"deleted {deleted}, failed {failed} — check {dottorrents_dir}/.{remaining_note}",
             fg=color,
             bold=True,
         )

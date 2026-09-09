@@ -695,3 +695,59 @@ def test_cli_up_url_flag_unsupported_falls_through(tmp_path, monkeypatch):
         assert result.exit_code == 0, result.output
         assert "Could not resolve that URL" in result.output
         assert "No scraper results found" in result.output
+
+
+def _make_batch(tmp_path, n=3):
+    from simurg.metadata import enricher  # noqa: F401  (kept local for symmetry)
+
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    for i in range(1, n + 1):
+        _make_epub(batch / f"Book {i:02d} - Author A.epub", title=f"Book {i:02d}")
+    return batch
+
+
+def test_cli_up_limit_slices_batch(tmp_path, monkeypatch):
+    """--limit 1 of 3 processes only the first sorted file + rerun hint."""
+    from simurg.metadata import enricher
+
+    monkeypatch.setattr(enricher, "search_all_scrapers", lambda inbuilt, session=None: [])
+
+    batch = _make_batch(tmp_path, n=3)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[directory]\ndottorrents_dir = ".torrents"\n\n[tracker.simurg]\nsession=""\n')
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        import shutil
+
+        shutil.copytree(str(batch), "batch")
+        Path("config.toml").write_text(cfg.read_text())
+        result = runner.invoke(cli, ["up", "batch", "--dry-run", "--limit", "1"])
+        assert result.exit_code == 0, result.output
+        assert "processing 1 this run" in result.output
+        assert "remaining — rerun the same command" in result.output
+        assert len(list(Path(".torrents").glob("*.torrent"))) == 1
+
+
+def test_cli_up_limit_zero_unlimited(tmp_path, monkeypatch):
+    """--limit 0 disables slicing (all files processed, no rerun hint)."""
+    from simurg.metadata import enricher
+
+    monkeypatch.setattr(enricher, "search_all_scrapers", lambda inbuilt, session=None: [])
+
+    batch = _make_batch(tmp_path, n=3)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[directory]\ndottorrents_dir = ".torrents"\n\n[tracker.simurg]\nsession=""\n')
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        import shutil
+
+        shutil.copytree(str(batch), "batch")
+        Path("config.toml").write_text(cfg.read_text())
+        result = runner.invoke(cli, ["up", "batch", "--dry-run", "--limit", "0"])
+        assert result.exit_code == 0, result.output
+        assert "processing 3 this run" in result.output
+        assert "remaining — rerun" not in result.output
+        assert len(list(Path(".torrents").glob("*.torrent"))) == 3

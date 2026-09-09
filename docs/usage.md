@@ -39,8 +39,11 @@ From `up --help` (`simurg/cli.py:925-965`):
 | `--url URL` | Paste a book-page URL (`openlibrary.org`, `books.google.com`/`googleapis.com`, `bookbrainz.org`, `abebooks.com`, `penguinrandomhouse.com`, `librarything.com`, `wonderclub.com`, `archive.org`, `loc.gov`, `openalex.org`/`api.openalex.org`) — routed to matching scraper, skipping auto search. Trailing title slugs accepted |
 | `--no-rename` | Skip filename sanitize/staging |
 | `--no-review` | Skip interactive editor metadata review |
+| `--limit N` | Max files processed per run (default `50`, `0` = unlimited, constant `BATCH_LIMIT_DEFAULT` in `simurg/constants.py`). Processes the first N sorted files; rerun the same command for the next batch. Keeps startup fast on huge dirs (4000+ files stall group detection, which reads every file). Magazine Year/Decade packs are pack-aware: the cut expands to finish any open pack. Note: `--no-rename` leaves files in place, so rerunning repeats the same batch |
 
 ## What `up` does per file
+
+Each run processes the first `--limit` (default 50) sorted files; rerun the same command for the next batch (processed files move to staging, so the next run picks up where it left off).
 
 For each top-level file in `<directory>` (subdirectories are warned and ignored, `cli.py:687-691`):
 
@@ -83,6 +86,7 @@ For each top-level file in `<directory>` (subdirectories are warned and ignored,
 ## Batch and categories
 
 - Each directory should contain **N unrelated** files → N single-file torrents. Publisher-issued packs belong in one directory named like `Dune - Frank Herbert (2020) [EPUB Retail]/` so the pack is uploaded from that subdir, not as separate files.
+- Runs are capped at `--limit` files (default 50): only the first N sorted files are processed per invocation — rerun the same `make run DIR=...` command for the next batch.
 - ` --category ebooks` (default): formats `EPUB/PDF/MOBI/AZW3/DJVU`, source labels `Retail/Scan/OCR/Convert/Other`, payload `type=2`.
 - ` --category magazines`: formats `PDF/CBR/CBZ/DJVU`, sources `Retail/Scan/OCR/Convert/Other`, payload `type=7` (`compile_data_new_magazine`/`compile_data_existing_magazine`). Requires `issue_date` or `issue_number` and volume when present (`rules.txt:130`). See `metadata/magazine.py`.
 

@@ -51,6 +51,11 @@ CANONICAL_STRIP_RE = re.compile(
 # Type enum — Simurg upload form type for ebooks
 UPLOAD_TYPE = "E-Book"
 
+# Max files processed per `up` run. Large batches (4000+ files) stall startup
+# (group detection reads every file), so process N then rerun same command.
+# Overridable via `up --limit N` (0 = unlimited).
+BATCH_LIMIT_DEFAULT = 50
+
 # Per-request HTTP timeout (seconds) for all metadata scrapers.
 SCRAPER_TIMEOUT = 6
 
