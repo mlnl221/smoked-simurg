@@ -76,7 +76,7 @@ files in <directory>
   → cover download → downscale ~500×500, PNG→JPG (Pillow) → rehost (ptscreens/imgbb/catbox, never hotlink)
   → stage/rename to staging_dir ({Title} - {Author} (year) [ISBN].ext or magazines: {Title} - {Issue label} (year).ext, BLACKLISTED_CHARS sanitized)
   → torrent (torf, private=1, piece 32768, source:SIM) → payload compile_data_* (magazines pad issue_date to YYYY-MM-DD) → upload POST
-  → rate-limit 15 s between files (countdown, Ctrl+C to skip)
+  → rate-limit 7 s after each successful upload only (countdown, Ctrl+C to skip)
 ```
 
 `--dry-run` follows the same path including prompts, staging, cover rehost, and real `.torrent` write to `dottorrents_dir`; only the final POST is skipped (`cli.py:794-820`, `README.md:100-101`). `.cache/magazine_issns.csv` is the only persistent cache (exact-title ISSN reuse); all other scrapers are always freshly queried (`enricher.py:1`).

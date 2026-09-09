@@ -36,8 +36,8 @@ Decode inbuilt metadata → query every scraper fresh (ISBN then title+author; m
 **What does `--dry-run` do?**
 Full interactive flow, staging, cover rehosting, and real `.torrent` written to `dottorrents_dir` — but no upload POST (`cli.py:794-820`, `README.md:100-101`). Use it to rehearse prompts and inspect outputs. Between-files tracker-less dry-run skips dupe search with a warning.
 
-**Why do I see a 15 s wait between files?**
-Rate-limit protection (`cli.py:842-844`, `_rate_limit_wait` at `cli.py:39-62`). Visible countdown; `Ctrl+C` offers to skip the remaining wait without aborting the batch.
+**Why do I see a 7 s wait between files?**
+Rate-limit protection, only after a successful upload (`_rate_limit_wait` at `cli.py:39-62`). Visible countdown; `Ctrl+C` offers to skip the remaining wait without aborting the batch. Skipped/deleted/failed files never trigger the wait.
 
 **Can I force an upload into an existing Publication?**
 `--group-id ID` forces `publicationid` (`cli.py:652`). It must be the **Publication** id (from `torrents.php?action=publication&id=PID`), not the torrent group id (`torrents.php?id=GID`) — they are different id spaces (`mistakes.md:2026-08-25 groupid`, `payload.py:159-163`). Validated by `GET /upload.php?publicationid=<id>` checking hidden `book_work_id`.
