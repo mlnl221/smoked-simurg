@@ -4,7 +4,7 @@
 
 Local-only CLI to batch-upload E-Books to [Simurg](https://simurg.world/) (a Gazelle-based e-book tracker). No global installs — everything lives in this repo and runs via a local `.venv`.
 
-**MVP:** `python -m simurg up <directory>` (or `make run DIR=<directory>`) → N unrelated files (`.pdf/.epub/.mobi/.azw3/.djvu`) → N single-file private torrents (`source:SIM`, `private:1`, piece 32768).
+**MVP:** `python -m simurg up <directory>` (or `make run DIR=<directory>`) → N unrelated files (`.pdf/.epub/.mobi/.azw3/.djvu`) → N single-file private torrents (`source:SIM`, `private:1`, piece 32768). Each run processes the first `--limit` sorted files (default 50, `0` = unlimited) — rerun the same command for the next batch.
 
 ## Quick start
 
@@ -26,7 +26,7 @@ Human-readable wiki lives in `docs/`:
 | Doc | What it covers |
 |---|---|
 | [`docs/setup.md`](docs/setup.md) | Venv, deps, `config.toml` placement, `make health`/`checkconf`, pre-commit hook, lint/format |
-| [`docs/usage.md`](docs/usage.md) | `up` flow per file, all flags (`--dry-run`, `--category`, `--source`, `--format`, `--language`, `--group-id`, `--cover`, `--url`, `--no-rename`, `--no-review`), magazines, batch tips |
+| [`docs/usage.md`](docs/usage.md) | `up` flow per file, all flags (`--dry-run`, `--category`, `--source`, `--format`, `--language`, `--group-id`, `--cover`, `--url`, `--no-rename`, `--no-review`, `--limit`), magazines, batch tips |
 | [`docs/config.md`](docs/config.md) | Every `config.toml` section/key (`[directory]`, `[image]`, `[metadata]`, `[tracker.simurg]`, `[upload]`), secrets, image handling |
 | [`docs/architecture.md`](docs/architecture.md) | Layout, data flow, modules (`metadata`, `trackers`, `uploader`, `images`), verified Gazelle-legacy payload mapping, invariants |
 | [`docs/faq.md`](docs/faq.md) | Auth, encrypted PDFs, `.txt` rejection, dupes, `publicationid` vs `groupid`, covers, rate-limit, troubleshooting |
