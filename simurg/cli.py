@@ -3191,6 +3191,34 @@ def checkconf():
     except Exception as e:
         click.secho(f"Image host check: FAILED - {e}", fg="yellow")
 
+    # Torrent client (qBittorrent push after upload)
+    try:
+        from simurg.config import get_config as _cfg3
+
+        _cc = _cfg3().client
+        _enabled = bool(_cc.get("enabled", False))
+        _url = str(_cc.get("torrent_client", "") or "").strip()
+        if not _enabled or not _url:
+            click.secho("Torrent client: SKIPPED (disabled, see [client] in config)", fg="yellow")
+        else:
+            from simurg.uploader.client import QBittorrentClient, masked_url
+
+            click.echo(f" url: {masked_url(_url)}")
+            _sp = str(_cc.get("save_path", "") or "")
+            _lp = str(_cc.get("local_path", "") or "")
+            click.echo(f" save_path (qbit view): {_sp or '(missing)'}")
+            click.echo(f" local_path (WSL mount): {_lp or '(missing)'}")
+            if not _sp or not _lp:
+                click.secho("Torrent client: FAILED - set save_path + local_path", fg="red")
+            else:
+                _client = QBittorrentClient(_url)
+                if _client.client:
+                    click.secho("Torrent client: OK (qBittorrent login)", fg="green")
+                else:
+                    click.secho("Torrent client: FAILED - login failed", fg="red")
+    except Exception as e:
+        click.secho(f"Torrent client: FAILED - {e}", fg="yellow")
+
     # Scrapers actually exercised by checkconf (docs/ux-improvements.md §3.1).
     # Anything not probed below is reported as SKIPPED so coverage is honest.
     scrapers = [

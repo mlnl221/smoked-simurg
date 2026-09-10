@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from simurg.constants import fmt_url
+from simurg.uploader.client import maybe_push_to_client
 from simurg.uploader.payload import (
     build_release_desc,
     compile_data_existing_magazine,
@@ -115,6 +116,7 @@ def prepare_and_upload(
             fmt_url(f"https://simurg.world/torrents.php?id={ret_group_id}&torrentid={torrent_id}")
         )
         _stamp_torrent_comment(torrent_path, torrent, gazelle_site.base_url, torrent_id)
+        maybe_push_to_client(torrent_path, filepath, dry_run=False)
         return torrent_id, ret_group_id, torrent_path
     except Exception as e:
         err_msg = str(e)
@@ -136,6 +138,7 @@ def prepare_and_upload(
                 )
                 click.echo(fmt_url(f"https://simurg.world/torrents.php?id={gid}&torrentid={tid}"))
                 _stamp_torrent_comment(torrent_path, torrent, gazelle_site.base_url, tid)
+                maybe_push_to_client(torrent_path, filepath, dry_run=False)
                 return tid, gid, torrent_path
         # Handle publication already exists - retry with existing publication
         if "publication already exists" in err_msg.lower():
@@ -185,6 +188,7 @@ def prepare_and_upload(
                         _stamp_torrent_comment(
                             torrent_path, torrent, gazelle_site.base_url, retry_tid
                         )
+                        maybe_push_to_client(torrent_path, filepath, dry_run=False)
                         return retry_tid, retry_gid, torrent_path
                     except Exception as retry_e:
                         if "publication already exists" in str(retry_e).lower() and pid != ids[-1]:

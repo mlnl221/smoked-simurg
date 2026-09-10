@@ -31,3 +31,19 @@ check_recent_uploads = true
 check_requests = true
 copy_uploaded_url_to_clipboard = false
 debug_tracker_connection = false
+
+[client]
+# Push each uploaded .torrent to qBittorrent after tracker upload (warn-only,
+# never fails the upload). Disabled by default.
+enabled = false
+# libtc URL of qbit WebUI (host reachable from here, e.g. your NAS):
+# torrent_client = "qbittorrent+http://USER:PASS@192.168.1.10:8080"
+torrent_client = ""
+# NAS-local view of seed dir (passed as save_path to qbit, qbit must see it):
+# save_path = "/downloads/simurg"
+save_path = ""
+# WSL-local view of the SAME dir (mounted NAS share; content copied here first):
+# local_path = "/mnt/nas/downloads/simurg"
+local_path = ""
+category = "simurg"
+add_paused = false

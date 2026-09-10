@@ -66,6 +66,7 @@ class Config:
         self.metadata = _CfgSection(data.get("metadata", {}))
         self.tracker = _CfgSection(data.get("tracker", {}))
         self.upload = _CfgSection(data.get("upload", {}))
+        self.client = _CfgSection(data.get("client", {}))
 
     def get_tracker_cfg(self, code: str = "simurg") -> _CfgSection:
         # tracker.simurg or tracker[simurg]
