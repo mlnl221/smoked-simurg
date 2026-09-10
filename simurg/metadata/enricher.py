@@ -18,6 +18,7 @@ import requests
 from simurg.metadata.scrapers.abebooks import AbeBooksScraper
 from simurg.metadata.scrapers.bookbrainz import BookBrainzScraper
 from simurg.metadata.scrapers.crossref import CrossrefScraper
+from simurg.metadata.scrapers.goodreads import GoodreadsScraper
 from simurg.metadata.scrapers.googlebooks import GoogleBooksScraper
 from simurg.metadata.scrapers.internetarchive import InternetArchiveScraper
 from simurg.metadata.scrapers.libraryofcongress import LibraryOfCongressScraper
@@ -135,6 +136,7 @@ def _all_scrapers(session: requests.Session):
         GoogleBooksScraper(session),
         BookBrainzScraper(session),
         AbeBooksScraper(session),
+        GoodreadsScraper(session),
         PenguinRandomHouseScraper(session),
         LibraryThingScraper(session),
         WonderClubScraper(session),

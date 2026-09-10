@@ -1049,6 +1049,11 @@ def cli():
     show_default=True,
     help="Max files processed per run (0 = unlimited). Ebooks stop the directory walk at N; magazines scan fully for pack detection. Rerun the same command for the next batch.",
 )
+@click.option(
+    "--no-early-dupe",
+    is_flag=True,
+    help="Skip the pre-enrichment Simurg dupe pre-check (file tags only).",
+)
 def up(
     directory,
     dry_run,
@@ -1062,6 +1067,7 @@ def up(
     no_review,
     url,
     limit,
+    no_early_dupe,
 ):
     """Batch upload N unrelated files -> N torrents (ebooks or magazines).
 
@@ -1972,6 +1978,37 @@ def up(
         # Print the metadata read from the file (before any scraping) so the
         # user can eyeball/confirm it (docs/ux-improvements.md: per-file preview).
         _print_inbuilt_metadata(inbuilt, fmt, is_mag=is_mag)
+
+        # [2b] Early dupe pre-check from file tags only — alert before the
+        # user pays enrichment-prompt cost. Late check ([5]) stays authoritative.
+        if gazelle_site and not no_early_dupe and group_id is None:
+            from simurg.uploader.dupe import build_early_search_strs, check_early_dupes
+
+            early_strs = build_early_search_strs(inbuilt, filepath.stem)
+            if early_strs:
+                click.secho(f"Early dupe check (file tags only): {early_strs}", fg="yellow")
+                try:
+                    early_decision, _ = check_early_dupes(gazelle_site, early_strs)
+                except click.Abort:
+                    raise
+                except Exception as e:
+                    click.secho(f"Early dupe check failed: {e}", fg="yellow")
+                    early_decision = "continue"
+                if early_decision == "skip":
+                    click.secho(
+                        f"Skipping file {filepath.name} per early dupe choice",
+                        fg="yellow",
+                    )
+                    skipped += 1
+                    continue
+                if early_decision == "delete":
+                    if _confirm_delete_file(filepath, dry_run=dry_run):
+                        deleted += 1
+                    else:
+                        skipped += 1
+                    continue
+                if early_decision == "abort":
+                    raise click.Abort()
 
         # [3] Enrich — query scrapers for this category, let user pick which result to use.
         # A pasted URL (--url flag or 'u' at the prompt) routes to the matching
@@ -3226,6 +3263,7 @@ def checkconf():
         "googlebooks",
         "bookbrainz",
         "abebooks",
+        "goodreads",
     ]
     for name in scrapers:
         try:
@@ -3265,6 +3303,19 @@ def checkconf():
                     click.secho(f"Scraper abebooks: OK (found {r.get('title')})", fg="green")
                 else:
                     click.secho("Scraper abebooks: OK (no result but reachable)", fg="green")
+            elif name == "goodreads":
+                from simurg.metadata.scrapers.goodreads import GoodreadsScraper
+
+                sc = GoodreadsScraper()
+                r = sc.search_isbn("9780140328721")
+                if r:
+                    click.secho(f"Scraper goodreads: OK (found {r.get('title')})", fg="green")
+                else:
+                    # Detail pages are WAF-gated; None is the graceful path.
+                    click.secho(
+                        "Scraper goodreads: OK (no result — WAF challenge or no token)",
+                        fg="green",
+                    )
         except Exception as e:
             click.secho(f"Scraper {name}: FAILED - {e}", fg="yellow")
 

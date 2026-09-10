@@ -1,8 +1,11 @@
+import json as _json
+
 import pytest
 
 from simurg.metadata.scrapers.abebooks import AbeBooksScraper
 from simurg.metadata.scrapers.base import BaseScraper
 from simurg.metadata.scrapers.bookbrainz import BookBrainzScraper
+from simurg.metadata.scrapers.goodreads import GoodreadsScraper
 from simurg.metadata.scrapers.googlebooks import GoogleBooksScraper
 from simurg.metadata.scrapers.internetarchive import InternetArchiveScraper
 from simurg.metadata.scrapers.libraryofcongress import LibraryOfCongressScraper
@@ -710,6 +713,170 @@ def test_bookbrainz_search_url_ignores_trailing_slug(monkeypatch):
     monkeypatch.setattr(sc.session, "get", fake_get)
     res = sc.search_url(f"https://bookbrainz.org/edition/{bbid}/some-title")
     assert res["title"] == "Dune"
+
+
+# ---- Goodreads ---------------------------------------------------------------
+
+
+def _gr_next_data_html(book_id=2196389, year_ms=757411200000, pages=127):
+    state = {
+        "Book:kca://book/abc": {
+            "__typename": "Book",
+            "legacyId": book_id,
+            "title": "Irish Journal",
+            "titleComplete": "Irish Journal (European Classics)",
+            "webUrl": f"https://www.goodreads.com/book/show/{book_id}.Irish_Journal",
+            "imageUrl": (
+                "https://m.media-amazon.com/images/S/compressed.photo.goodreads.com"
+                f"/books/1697823275i/{book_id}.jpg"
+            ),
+            "description": "In <em>Irish Journal</em>, Heinrich Boll paints a picture.",
+            'description({"stripped":true})': "In Irish Journal, Heinrich Boll paints a picture.",
+            "primaryContributorEdge": {"node": {"__ref": "Contributor:kca://author/x"}},
+            "bookGenres": [{"genre": {"name": "Travel"}}, {"genre": {"name": "Nonfiction"}}],
+            "details": {
+                "format": "Paperback",
+                "numPages": pages,
+                "publisher": "Northwestern University Press",
+                "isbn": "0810111497",
+                "isbn13": "9780810111493",
+                "publicationTime": year_ms,
+                "language": {"name": "English"},
+            },
+            "work": {"__ref": "Work:kca://work/w"},
+        },
+        "Contributor:kca://author/x": {"__typename": "Contributor", "name": "Heinrich Böll"},
+        "Work:kca://work/w": {
+            "__typename": "Work",
+            "details": {"originalTitle": "Irisches Tagebuch", "publicationTime": -410198400000},
+        },
+    }
+    payload = {"props": {"pageProps": {"apolloState": state}}}
+    return (
+        "<html><head>"
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + _json.dumps(payload)
+        + "</script></head><body></body></html>"
+    )
+
+
+GR_LD_JSON_HTML = """
+<html><head>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "Book", "name": "Irish Journal",
+ "image": "https://m.media-amazon.com/images/S/2196389.jpg",
+ "bookFormat": "Paperback", "numberOfPages": 127, "inLanguage": "English",
+ "isbn": "9780810111493",
+ "author": [{"@type": "Person", "name": "Heinrich Böll"}]}
+</script>
+</head><body>
+<h1 data-testid="bookTitle">Irish Journal</h1>
+<p data-testid="pagesFormat">127 pages, Paperback</p>
+<p data-testid="publicationInfo">First published January 1, 1957</p>
+<div data-testid="genresList"><a href="/genres/travel">Travel</a></div>
+</body></html>
+"""
+
+GR_CHALLENGE_HTML = """
+<html><head><title></title></head><body>
+<div id="challenge-container"></div>
+<script>window.awsWafCookieDomainList = []; window.gokuProps = {"key": "x"}</script>
+<script>AwsWafIntegration.getToken()</script>
+</body></html>
+"""
+
+
+def test_goodreads_search_isbn_next_data(monkeypatch):
+    sc = GoodreadsScraper()
+
+    def fake_session_get(url, params=None, timeout=10, **kwargs):
+        assert "auto_complete" in url
+        return DummyResponse([{"bookId": 2196389, "bookTitleBare": "Irish Journal"}])
+
+    def fake_get(self, url, params=None):
+        return DummyResponse(text=_gr_next_data_html(), url=url)
+
+    monkeypatch.setattr(sc.session, "get", fake_session_get)
+    monkeypatch.setattr(GoodreadsScraper, "_get", fake_get)
+    res = sc.search_isbn("9780810111493")
+    assert res is not None
+    assert res["title"] == "Irish Journal (European Classics)"
+    assert res["authors"] == ["Heinrich Böll"]
+    assert res["publisher"] == "Northwestern University Press"
+    assert res["year"] == 1994
+    assert res["publish_year"] == 1994
+    assert res["first_publish_year"] == 1957
+    assert res["page_count"] == 127
+    assert res["isbn"] == "9780810111493"
+    assert res["language"] == "English"
+    assert res["subjects"] == ["Travel", "Nonfiction"]
+    assert res["description"] == "In Irish Journal, Heinrich Boll paints a picture."
+    assert res["cover_url"].endswith("/2196389.jpg")
+
+
+def test_goodreads_challenge_returns_none(monkeypatch):
+    sc = GoodreadsScraper()
+
+    def fake_get(url, params=None, timeout=10, **kwargs):
+        return DummyResponse(text=GR_CHALLENGE_HTML, url=url)
+
+    monkeypatch.setattr(sc.session, "get", fake_get)
+    assert sc.search_url("https://www.goodreads.com/book/show/2196389.Irish_Journal") is None
+
+
+def test_goodreads_ld_json_fallback(monkeypatch):
+    sc = GoodreadsScraper()
+
+    def fake_get(self, url, params=None):
+        return DummyResponse(text=GR_LD_JSON_HTML, url=url)
+
+    monkeypatch.setattr(GoodreadsScraper, "_get", fake_get)
+    res = sc.search_url("https://www.goodreads.com/book/show/2196389")
+    assert res is not None
+    assert res["title"] == "Irish Journal"
+    assert res["authors"] == ["Heinrich Böll"]
+    assert res["page_count"] == 127
+    assert res["isbn"] == "9780810111493"
+    assert res["language"] == "English"
+    assert res["subjects"] == ["Travel"]
+    assert res["cover_url"].startswith("https://m.media-amazon.com")
+
+
+def test_goodreads_search_title_author_distinct_years(monkeypatch):
+    sc = GoodreadsScraper()
+    hits = [
+        {"bookId": 2196389, "bookTitleBare": "Irish Journal", "author": {"name": "Heinrich Böll"}},
+        {
+            "bookId": 10970534,
+            "bookTitleBare": "Irish Journal",
+            "author": {"name": "Heinrich Böll"},
+        },
+        {"bookId": 1, "bookTitleBare": "Totally Unrelated XYZ", "author": {"name": "Nobody"}},
+    ]
+    monkeypatch.setattr(sc, "_autocomplete", lambda q: hits)
+
+    def fake_fetch(self, book_id, preferred_isbn=None):
+        if str(book_id) == "2196389":
+            return {"title": "Irish Journal", "authors": ["Heinrich Böll"], "year": 1994}
+        return {
+            "title": "Irish Journal (The Essential Heinrich Boll)",
+            "authors": ["Heinrich Böll"],
+            "year": 2008,
+        }
+
+    monkeypatch.setattr(GoodreadsScraper, "_fetch_book", fake_fetch)
+    res = sc.search_title_author("Irish Journal", ["Heinrich Böll"])
+    assert isinstance(res, list) and len(res) == 2
+    assert {r["year"] for r in res} == {1994, 2008}
+
+
+def test_goodreads_match_url():
+    sc = GoodreadsScraper()
+    assert sc.match_url("https://www.goodreads.com/book/show/2196389.Irish_Journal") is True
+    assert sc.match_url("https://www.goodreads.com/book/show/2196389") is True
+    assert sc.match_url("https://goodreads.com/book/show/1") is True
+    assert sc.match_url("https://example.com/book/show/1") is False
+    assert sc.search_url("https://example.com/book/show/1") is None
 
 
 def test_internetarchive_search_url_ignores_deep_link(monkeypatch):

@@ -12,6 +12,10 @@ catbox_userhash = ""  # optional
 
 [metadata]
 googlebooks_key = ""
+# Optional Goodreads AWS WAF token (single aws-waf-token value from browser
+# devtools: Application > Cookies > www.goodreads.com). Raises Goodreads
+# detail-page hit rate; empty = degrade gracefully, auto_complete still works.
+goodreads_waf_token = ""
 cover_fallback_duckduckgo = true
 librarything_token = ""  # LibraryThing Talpa API token (also used as REST apikey)
 openalex_api_key = ""  # OpenAlex /sources API key (free, https://openalex.org/settings/api) — required for ISSN lookup
