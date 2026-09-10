@@ -18,10 +18,12 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import click
+from torf import Torrent
 
 _WIN_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 
@@ -130,6 +132,24 @@ class QBittorrentClient:
             click.secho(f"Failed to add torrent to qBittorrent: {e}", fg="red", bold=True)
             return False
 
+    def recheck(self, torrent_hash: str) -> bool:
+        """Force qbit to hash-check the torrent so it picks up the seed copy."""
+        if not self.client:
+            return False
+        try:
+            click.secho("Rechecking torrent in qBittorrent...", fg="yellow")
+            self.client.torrents_recheck(torrent_hashes=torrent_hash)
+            click.secho("Recheck started in qBittorrent", fg="green")
+            return True
+        except Exception as e:
+            click.secho(f"qBittorrent recheck failed: {e}", fg="red", bold=True)
+            return False
+
+
+def _torrent_infohash(torrent_path) -> str:
+    """v1 info-hash hex of a .torrent file (identifies it to qbit)."""
+    return Torrent.read(torrent_path).infohash
+
 
 def _copy_via_windows_interop(content: Path, local_dir: str) -> Path:
     """Copy via cmd.exe for Windows drive paths (e.g. W:\\dir) unreachable in WSL.
@@ -219,7 +239,13 @@ def maybe_push_to_client(torrent_path, content_path, dry_run: bool = False) -> b
 
     try:
         client = QBittorrentClient(url)
-        return client.add_to_downloader(save_path, blob, is_paused=add_paused, category=category)
+        if not client.add_to_downloader(save_path, blob, is_paused=add_paused, category=category):
+            return False
+        # Let qbit register the torrent and see the seed copy, then force a
+        # recheck so it hashes to 100% instead of downloading from scratch.
+        time.sleep(5)
+        client.recheck(_torrent_infohash(torrent_path))
+        return True
     except Exception as e:
         click.secho(f"Torrent client: push failed: {e}", fg="red", bold=True)
         return False

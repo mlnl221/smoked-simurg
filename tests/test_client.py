@@ -157,12 +157,21 @@ def test_push_success(tmp_path: Path, monkeypatch):
             seen.update(save_path=save_path, blob=blob, paused=is_paused, category=category)
             return True
 
+        def recheck(self, torrent_hash):
+            seen["rechecked"] = torrent_hash
+            return True
+
     monkeypatch.setattr(client_mod, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(client_mod, "_torrent_infohash", lambda path: "deadbeef")
+    sleeps = []
+    monkeypatch.setattr(client_mod.time, "sleep", lambda s: sleeps.append(s))
     assert maybe_push_to_client(torrent, content) is True
     assert (seed / "book.epub").read_bytes() == b"book"
     assert seen["save_path"] == "/dl"
     assert seen["blob"] == b"torrent-bytes"
     assert seen["category"] == "simurg"
+    assert sleeps == [5]
+    assert seen["rechecked"] == "deadbeef"
 
 
 def test_push_client_failure_nonfatal(tmp_path: Path, monkeypatch):
@@ -186,6 +195,106 @@ def test_push_client_failure_nonfatal(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(client_mod, "QBittorrentClient", FailQbit)
     assert maybe_push_to_client(torrent, content) is False  # no raise
+
+
+def _push_cfg(tmp_path: Path, seed: Path):
+    _write_cfg(
+        tmp_path,
+        '[client]\nenabled = true\ntorrent_client = "qbittorrent+http://u:p@h:8080"\n'
+        f'save_path = "/dl"\nlocal_path = "{seed}"\n',
+    )
+
+
+def test_push_recheck_runs_after_sleep(tmp_path: Path, monkeypatch):
+    seed = tmp_path / "seed"
+    _push_cfg(tmp_path, seed)
+    content = tmp_path / "book.epub"
+    content.write_bytes(b"book")
+    torrent = tmp_path / "book.torrent"
+    torrent.write_bytes(b"t")
+
+    order = []
+
+    class FakeQbit:
+        def __init__(self, url):
+            pass
+
+        def add_to_downloader(self, *a, **k):
+            order.append("add")
+            return True
+
+        def recheck(self, h):
+            order.append(("recheck", h))
+            return True
+
+    monkeypatch.setattr(client_mod, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(client_mod, "_torrent_infohash", lambda path: "abc123")
+    monkeypatch.setattr(client_mod.time, "sleep", lambda s: order.append(("sleep", s)))
+    assert maybe_push_to_client(torrent, content) is True
+    assert order == ["add", ("sleep", 5), ("recheck", "abc123")]
+
+
+def test_push_recheck_failure_still_success(tmp_path: Path, monkeypatch):
+    seed = tmp_path / "seed"
+    _push_cfg(tmp_path, seed)
+    content = tmp_path / "book.epub"
+    content.write_bytes(b"book")
+    torrent = tmp_path / "book.torrent"
+    torrent.write_bytes(b"t")
+
+    class FakeQbit:
+        def __init__(self, url):
+            pass
+
+        def add_to_downloader(self, *a, **k):
+            return True
+
+        def recheck(self, h):
+            return False  # warn-only, push still counts
+
+    monkeypatch.setattr(client_mod, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(client_mod, "_torrent_infohash", lambda path: "abc123")
+    monkeypatch.setattr(client_mod.time, "sleep", lambda s: None)
+    assert maybe_push_to_client(torrent, content) is True
+
+
+def test_push_add_failure_skips_recheck(tmp_path: Path, monkeypatch):
+    seed = tmp_path / "seed"
+    _push_cfg(tmp_path, seed)
+    content = tmp_path / "book.epub"
+    content.write_bytes(b"book")
+    torrent = tmp_path / "book.torrent"
+    torrent.write_bytes(b"t")
+
+    class FakeQbit:
+        def __init__(self, url):
+            pass
+
+        def add_to_downloader(self, *a, **k):
+            return False
+
+        def recheck(self, h):
+            raise AssertionError("recheck must not run when add failed")
+
+    monkeypatch.setattr(client_mod, "QBittorrentClient", FakeQbit)
+    assert maybe_push_to_client(torrent, content) is False
+
+
+def test_torrent_infohash_real_file(tmp_path: Path):
+    from torf import Torrent
+
+    from simurg.uploader.client import _torrent_infohash
+
+    f = tmp_path / "book.epub"
+    f.write_bytes(b"fake epub content " * 100)
+    t = Torrent(f, trackers=["https://tracker.simurg.world/a/announce"], private=True, source="SIM")
+    t.piece_size = 32768
+    t.generate()
+    tp = tmp_path / "book - SIM.torrent"
+    t.write(tp, overwrite=True)
+    h = _torrent_infohash(str(tp))
+    assert h == t.infohash
+    assert len(h) == 40
 
 
 def test_copy_to_seed_dir_windows_failure(tmp_path: Path, monkeypatch):
