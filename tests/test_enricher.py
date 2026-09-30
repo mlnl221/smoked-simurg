@@ -14,11 +14,15 @@ from simurg.metadata.enricher import (
 @pytest.fixture(autouse=True)
 def _stub_penguinrandomhouse(monkeypatch):
     """Keep the PRH scraper offline by default; individual tests may override."""
+    from simurg.metadata.scrapers.goodreads import GoodreadsScraper
     from simurg.metadata.scrapers.librarything import LibraryThingScraper
     from simurg.metadata.scrapers.openalex import OpenAlexScraper
     from simurg.metadata.scrapers.penguinrandomhouse import PenguinRandomHouseScraper
     from simurg.metadata.scrapers.wonderclub import WonderClubScraper
 
+    monkeypatch.setattr(GoodreadsScraper, "search_isbn", lambda s, *a, **k: None)
+    monkeypatch.setattr(GoodreadsScraper, "search_title_author", lambda s, *a, **k: None)
+    monkeypatch.setattr(GoodreadsScraper, "search_url", lambda s, *a, **k: None)
     monkeypatch.setattr(PenguinRandomHouseScraper, "search_isbn", lambda s, *a, **k: None)
     monkeypatch.setattr(PenguinRandomHouseScraper, "search_title_author", lambda s, *a, **k: None)
     monkeypatch.setattr(PenguinRandomHouseScraper, "search_url", lambda s, *a, **k: None)
@@ -242,12 +246,14 @@ def test_merge_fill_gaps_merges_lists_deduped(monkeypatch):
 def test_search_all_by_isbn_aggregates_hits(monkeypatch):
     from simurg.metadata.scrapers.abebooks import AbeBooksScraper
     from simurg.metadata.scrapers.bookbrainz import BookBrainzScraper
+    from simurg.metadata.scrapers.goodreads import GoodreadsScraper
     from simurg.metadata.scrapers.googlebooks import GoogleBooksScraper
     from simurg.metadata.scrapers.librarything import LibraryThingScraper
     from simurg.metadata.scrapers.openlibrary import OpenLibraryScraper
     from simurg.metadata.scrapers.penguinrandomhouse import PenguinRandomHouseScraper
     from simurg.metadata.scrapers.wonderclub import WonderClubScraper
 
+    monkeypatch.setattr(GoodreadsScraper, "search_isbn", lambda s, i: None)
     monkeypatch.setattr(
         OpenLibraryScraper,
         "search_isbn",
@@ -285,6 +291,7 @@ def test_supported_url_domains_lists_scrapers():
     assert "books.google.com" in domains
     assert "bookbrainz.org" in domains
     assert "abebooks.com" in domains
+    assert "goodreads.com" in domains
     assert "archive.org" in domains
     assert "loc.gov" in domains
     assert "openalex.org" in domains

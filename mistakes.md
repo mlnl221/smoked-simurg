@@ -67,6 +67,11 @@ This file records past failures for this project. Agents must read it before sta
 - **Why it happened**: Pattern matched the local gitignored `config.toml`; output not masked.
 - **How to avoid next time**: Never `rg`/`cat` `config.toml` unmasked. Scope secret scans to tracked files (`git grep`) and verify `config.toml` presence only via masked key-length checks.
 
+### 2026-09-30
+- **What happened**: Auto-upload driver stalled on early-dupe prompt; pexpect TIMEOUT killed run after 3/10 uploads. Separately, uploads carried lame tags (`non.fiction`, bare `fiction`) despite rich descriptions.
+- **Why it happened**: (1) Driver matched `continue / \[s\]kip file` but prompt renders `[c]ontinue / [s]kip` (`]` breaks substring). (2) `GENRE_LEXICON` lacked variants (`suspenseful`, `mysterious`, `romance`/`romantic`) and matcher used strict `\bphrase\b`, so `suspenseful`/`mysterious`/`romance with` never hit; fallback `non.fiction` stuck and merged alongside real suggestions.
+- **How to avoid next time**: Match prompts on stable substrings (`skip this file now`); add morphological variants to lexicon + stem-tolerant `\w*` matching; drop `non.fiction` fallback when suggestions exist (combine.py + review.py); answer cross-enrich `y` (primary locked, fills tags).
+
 ### 2026-09-09
 - **What happened**: Ebook upload `The Djinn in the Nightingale's Eye` failed with `{"status":"failure","error":"You must enter at least one tag. Maximum length is 200 characters."}` despite showing 8 tags. Payload tags string was 203 chars.
 - **Why it happened**: `clean_tags` capped tag COUNT at 8 but nothing enforced the tracker 200-char TOTAL on the joined string; `_tags_for_payload` passed it through untouched. Same gap let `Collections / Anthologies` become `collections..anthologies` (slash stripped, dots never collapsed).

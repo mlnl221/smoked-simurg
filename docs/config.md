@@ -59,6 +59,7 @@ catbox_userhash = ""
 | `cover_fallback_duckduckgo` | `true` | Allow DuckDuckGo image search when scraper/file cover missing (`scrapers/duckduckgo.py`) |
 | `librarything_token` | `""` | LibraryThing Talpa API token (also used as REST `apikey`) for `LibraryThingScraper` |
 | `openalex_api_key` | `""` | OpenAlex `/sources` API key (free, https://openalex.org/settings/api) — required for ISSN lookup via `OpenAlexScraper` |
+| `goodreads_waf_token` | `""` | Optional `aws-waf-token` cookie value (F12 Application > Cookies > `www.goodreads.com`) for `GoodreadsScraper` detail pages; empty = degrade gracefully |
 
 ```toml
 [metadata]
@@ -66,6 +67,7 @@ googlebooks_key = ""
 cover_fallback_duckduckgo = true
 librarything_token = ""
 openalex_api_key = ""
+goodreads_waf_token = ""
 ```
 
 ### `[tracker.simurg]`

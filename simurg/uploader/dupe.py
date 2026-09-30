@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 from difflib import SequenceMatcher as SM
 from urllib import parse
 
@@ -12,6 +13,19 @@ import click
 from simurg.constants import fmt_url
 
 loop = asyncio.get_event_loop()
+
+# Browse responses keyed by (id(site), normalized query). The early pre-check
+# populates it; the late authoritative check reuses identical queries free.
+_browse_cache: dict[tuple[int, str], object] = {}
+
+
+def clear_dupe_cache() -> None:
+    """Drop cached browse responses (tests / fresh runs)."""
+    _browse_cache.clear()
+
+
+def _cache_key(gazelle_site, searchstr: str) -> tuple[int, str]:
+    return (id(gazelle_site), searchstr.lower().strip())
 
 
 def _sanitize_for_dupe(title: str) -> str:
@@ -64,13 +78,29 @@ def filter_unnecessary_searchstrs(searchstrs):
     return new_strs
 
 
-def get_search_results(gazelle_site, searchstrs):
+def get_search_results(gazelle_site, searchstrs, use_cache=True):
     """Title first, then ISBN fallback per E16. Limit display 10 but return all."""
     results = []
     # Do title search first; if results, return them; else fallback to isbn
     # searchstrs includes title+author and isbn last; we will query each individually via browse
-    tasks = [gazelle_site.request("browse", searchstr=s) for s in searchstrs]
-    for releases in loop.run_until_complete(asyncio.gather(*tasks)):
+    fetched: dict[tuple[int, str], object] = {}
+    pending = (
+        [s for s in searchstrs if _cache_key(gazelle_site, s) not in _browse_cache]
+        if use_cache
+        else list(searchstrs)
+    )
+    if pending:
+        tasks = [gazelle_site.request("browse", searchstr=s) for s in pending]
+        for s, releases in zip(
+            pending, loop.run_until_complete(asyncio.gather(*tasks)), strict=True
+        ):
+            key = _cache_key(gazelle_site, s)
+            fetched[key] = releases
+            if use_cache:
+                _browse_cache[key] = releases
+    for s in searchstrs:
+        key = _cache_key(gazelle_site, s)
+        releases = _browse_cache.get(key) if use_cache else fetched.get(key)
         # releases may be dict with "results" key
         items = releases.get("results") if isinstance(releases, dict) else releases
         if not items:
@@ -79,6 +109,67 @@ def get_search_results(gazelle_site, searchstrs):
             if release not in results:
                 results.append(release)
     return results
+
+
+def build_early_search_strs(inbuilt: dict, filepath_stem: str | None = None) -> list[str]:
+    """Search strings from file tags only (pre-enrichment).
+
+    Falls back to the filename stem when the file carries no title
+    (MOBI has no title/authors, DJVU nothing, PDF often bare).
+    Returns [] when nothing queryable exists.
+    """
+    title = ((inbuilt.get("title") or inbuilt.get("canonical_title")) or "").strip()
+    if not title and filepath_stem:
+        title = filepath_stem.strip()
+    authors = inbuilt.get("authors") or []
+    if isinstance(authors, str):
+        authors = [authors]
+    isbn = inbuilt.get("isbn") or None
+    if not title and not authors and not isbn:
+        return []
+    return generate_dupe_search_strs(title, authors, isbn)
+
+
+def check_early_dupes(gazelle_site, searchstrs):
+    """Pre-enrichment dupe alert. Returns (decision, results).
+
+    decision: "continue" (no hits, non-interactive, or user proceeds),
+    "skip" (skip file now), "delete" (delete file now, like the late
+    check), "abort" (abort whole batch). Never resolves a
+    group id — the late check_existing_group stays authoritative.
+    """
+    results = get_search_results(gazelle_site, searchstrs)
+    print_search_results(gazelle_site, results, " / ".join(searchstrs))
+    if not results:
+        return "continue", results
+    try:
+        if not sys.stdin.isatty():
+            return "continue", results
+    except Exception:
+        return "continue", results
+    while True:
+        try:
+            resp = click.prompt(
+                click.style(
+                    "\nPossible duplicate(s) from file tags above (before enrichment).\n"
+                    "Continue filling metadata, or skip this file now?\n"
+                    "[c]ontinue / [s]kip file / [d]elete file / [a]bort run",
+                    fg="magenta",
+                ),
+                default="c",
+            )
+        except (click.Abort, EOFError):
+            raise click.Abort() from None
+        c = (resp or "").strip().lower()
+        if c in ("", "c", "continue"):
+            return "continue", results
+        if c in ("s", "skip"):
+            return "skip", results
+        if c in ("d", "delete"):
+            return "delete", results
+        if c in ("a", "abort"):
+            return "abort", results
+        click.secho("Invalid choice — c/s/d/a.", fg="yellow")
 
 
 def print_search_results(gazelle_site, results, searchstr):

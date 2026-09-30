@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from simurg.constants import GENRE_LEXICON, TAGS_MAX_LENGTH
+from simurg.metadata.scrapers.util import clean_description
 
 
 def _flip_last_first(name: str) -> str:
@@ -187,7 +188,8 @@ def suggest_tags_from_description(
             continue
         score = 0
         for phrase in triggers:
-            score += len(re.findall(r"\b" + re.escape(phrase.lower()) + r"\b", blob))
+            # Stem-tolerant: "suspense" also matches "suspenseful".
+            score += len(re.findall(r"\b" + re.escape(phrase.lower()) + r"\w*\b", blob))
         if score > 0:
             scored.append((score, order, tag))
     scored.sort(key=lambda x: (-x[0], x[1]))
@@ -415,6 +417,7 @@ def build_metadata(
             or inbuilt.get("description")
             or ""
         )
+        raw_desc = clean_description(raw_desc) or ""
         suggested = suggest_tags_from_description(
             raw_desc,
             title=canonical_title,
@@ -422,8 +425,11 @@ def build_metadata(
             existing=tags,
         )
         if suggested:
-            merged = [t.strip() for t in f"{tags}, {suggested}".split(",") if t.strip()]
-            tags = clean_tags(merged)
+            if (tags or "").strip().lower() == "non.fiction":
+                tags = suggested
+            else:
+                merged = [t.strip() for t in f"{tags}, {suggested}".split(",") if t.strip()]
+                tags = clean_tags(merged)
     # Fallback tags if still empty — tracker requires at least one
     if not tags or not tags.strip():
         # Try to infer from title/author, else generic
@@ -434,8 +440,8 @@ def build_metadata(
     synopsis = (
         scraper.get("description") or scraper.get("synopsis") or inbuilt.get("description") or ""
     )
+    synopsis = clean_description(synopsis) or ""
     if synopsis:
-        synopsis = synopsis.strip()
         # Truncate to ~2000 chars first 2 paragraphs
         paras = synopsis.split("\n\n")
         if len(paras) > 2:

@@ -369,6 +369,7 @@ def test_ebook_path_excludes_magazine_only_scrapers():
     names = {s.name for s in ebook}
     assert "internetarchive" not in names
     assert "openlibrary" in names  # shared
+    assert "goodreads" in names  # ebook-only
 
 
 def test_magazine_path_only_magazine_scrapers():
@@ -379,6 +380,7 @@ def test_magazine_path_only_magazine_scrapers():
     assert "openalex" in names
     assert "openlibrary" not in names  # removed from magazine path per docs/magazine.txt
     assert "googlebooks" not in names
+    assert "goodreads" not in names
 
 
 def _cap(s):
