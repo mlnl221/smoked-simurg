@@ -254,6 +254,9 @@ def review_metadata(metadata: dict, is_mag: bool = False, dry_run: bool = False)
             base = [
                 str(t).strip() for t in (existing if was_list else str(existing or "").split(","))
             ]
+            # Drop lame non.fiction fallback when real suggestions exist.
+            if len(base) == 1 and base[0].lower() == "non.fiction":
+                base = []
             merged = clean_tags([t for t in base + suggested.split(", ") if t.strip()])
             metadata["tags"] = (
                 [t.strip() for t in merged.split(", ") if t.strip()] if was_list else merged

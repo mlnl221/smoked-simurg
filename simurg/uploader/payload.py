@@ -439,7 +439,12 @@ def build_release_desc(metadata: dict, source_urls: list[str] | None = None) -> 
     if metadata.get("release_notes"):
         lines.append(f"\n{metadata['release_notes']}")
     # Add auto note
+    try:
+        from simurg import __version__ as _ver
+    except Exception:
+        _ver = ""
+    _sig = f"smoked-simurg v{_ver}" if _ver else "smoked-simurg"
     lines.append(
-        "\n[i]Uploaded with [url=https://github.com/mlnl221/smoked-simurg]smoked-simurg[/url][/i]"
+        f"\n[i]Uploaded with [url=https://github.com/mlnl221/smoked-simurg]{_sig}[/url][/i]"
     )
     return "\n".join(lines)
