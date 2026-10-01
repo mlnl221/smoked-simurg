@@ -2862,7 +2862,7 @@ def up(
 
         # [8] Cover handling — always download the cover and REHOST it via
         # ptscreens/imgbb/catbox (never hotlink the source URL).
-        # Priority: --cover override > edited image [img] > scraper covers (chosen, then ranked alternates) > DuckDuckGo > OpenLibrary ISBN > embedded file cover
+        # Priority: --cover override > edited image [img] > scraper covers (chosen, then ranked alternates) > Amazon ISBN > OpenLibrary ISBN > Bing > DuckDuckGo > embedded file cover
         cover_url = None
         cover_path = metadata.get("cover_path")  # embedded file cover (last resort)
         cover_scraper = metadata.get("cover_url_scraper")
@@ -2905,7 +2905,43 @@ def up(
                     "No scraper cover usable (missing/invalid/blank).",
                     fg="yellow",
                 )
-        # 4) DuckDuckGo fallback if no scraper cover
+        # 4) Amazon ISBN cover (deterministic legacy image URL, hi-res).
+        if not temp_cover and metadata.get("isbn"):
+            try:
+                from simurg.metadata.scrapers.amazon import fetch_amazon_cover
+
+                amz_path = fetch_amazon_cover(
+                    metadata.get("title") or "",
+                    metadata.get("authors") or [],
+                    metadata.get("isbn"),
+                )
+                if amz_path:
+                    temp_cover = amz_path
+                    click.secho(f"Fallback Amazon cover: {amz_path}", fg="green")
+            except Exception as e:
+                click.secho(f"Amazon fallback failed: {e}", fg="yellow")
+        # 5) OpenLibrary ISBN cover (keyless, reliable; DuckDuckGo i.js 403s).
+        # Missing covers return a 1px image, rejected by size validation.
+        if not temp_cover and metadata.get("isbn"):
+            ol_url = f"https://covers.openlibrary.org/b/isbn/{metadata['isbn']}-L.jpg"
+            tmp = _download_url_to_temp(ol_url)
+            if tmp:
+                temp_cover = tmp
+                click.secho(f"Fallback OpenLibrary cover: {ol_url}", fg="green")
+        # 6) Bing image search (keyless HTML; Amazon CDN + tse thumbs first).
+        if not temp_cover:
+            try:
+                from simurg.metadata.scrapers.bing import fetch_bing_cover
+
+                bing_path = fetch_bing_cover(
+                    metadata.get("title") or "", metadata.get("authors") or []
+                )
+                if bing_path:
+                    temp_cover = bing_path
+                    click.secho(f"Fallback Bing cover: {bing_path}", fg="green")
+            except Exception as e:
+                click.secho(f"Bing fallback failed: {e}", fg="yellow")
+        # 7) DuckDuckGo fallback (kept for when its i.js stops 403ing).
         if not temp_cover:
             try:
                 from simurg.config import get_config
