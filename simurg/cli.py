@@ -275,6 +275,27 @@ def _confirm_rehosted_cover(
             raise
 
 
+def _ranked_cover_candidates(chosen: str | None, hits: list[dict] | None) -> list[tuple[str, str]]:
+    """Order cover URLs: chosen scraper first, then other hits by rank score.
+
+    Returns [(url, source_label)] deduped. Hits without a cover (e.g.
+    LibraryThing, which never returns one) drop out automatically.
+    """
+    from simurg.metadata.enricher import _result_score
+
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    if chosen and chosen.strip():
+        out.append((chosen.strip(), "chosen scraper"))
+        seen.add(chosen.strip().lower())
+    for hit in sorted(hits or [], key=_result_score, reverse=True):
+        url = (((hit or {}).get("cover_url")) or "").strip()
+        if url and url.lower() not in seen:
+            seen.add(url.lower())
+            out.append((url, f"'{(hit or {}).get('_scraper')}' scraper"))
+    return out
+
+
 def _decode_inbuilt_quick(filepath: Path) -> dict:
     ext = filepath.suffix.lower()
     if ext == ".epub":
@@ -1630,9 +1651,19 @@ def up(
                             )
                             Uploader = get_uploader(uploader_name)
                             rehost_url, _ = Uploader().upload_file(temp_cover)
-                            cover_url = rehost_url
-                            click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
-                            click.echo(fmt_url(cover_url))
+                            from simurg.images.validate import check_rehosted_url as _check_rehost
+
+                            ok, why = _check_rehost(rehost_url)
+                            if not ok:
+                                click.secho(
+                                    f"{FAIL_SYMBOL} Rehosted image failed content check ({why}) — continuing without image",
+                                    fg="yellow",
+                                )
+                                cover_url = None
+                            else:
+                                cover_url = rehost_url
+                                click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
+                                click.echo(fmt_url(cover_url))
                         except Exception as e:
                             click.secho(f"{FAIL_SYMBOL} Cover rehost failed: {e}", fg="red")
                             cover_url = None
@@ -2015,6 +2046,7 @@ def up(
         # scraper and, when it resolves, is auto-used as the chosen result (the
         # user found a better page than our auto-search could).
         scraper_data: dict = {}
+        scraper_results: list | None = None
         url_used = False
         if url:
             scraper_data = _scrape_from_url(url, inbuilt, dry_run=dry_run) or {}
@@ -2830,7 +2862,7 @@ def up(
 
         # [8] Cover handling — always download the cover and REHOST it via
         # ptscreens/imgbb/catbox (never hotlink the source URL).
-        # Priority: --cover override > edited image [img] > scraper cover > DuckDuckGo fallback > embedded file cover
+        # Priority: --cover override > edited image [img] > scraper covers (chosen, then ranked alternates) > DuckDuckGo > OpenLibrary ISBN > embedded file cover
         cover_url = None
         cover_path = metadata.get("cover_path")  # embedded file cover (last resort)
         cover_scraper = metadata.get("cover_url_scraper")
@@ -2858,15 +2890,19 @@ def up(
                     f"Failed to download edited image URL (missing/invalid): {edited_image}",
                     fg="yellow",
                 )
-        # 3) Scraper cover (best quality — always scrape per user decision)
-        if cover_scraper and not temp_cover:
-            tmp = _download_url_to_temp(cover_scraper)
-            if tmp:
-                temp_cover = tmp
-                click.secho(f"Downloaded cover from scraper: {cover_scraper}", fg="green")
-            else:
+        # 3) Scraper covers: chosen first, then other hits by rank score —
+        # one source's cover may be blank/missing while another hit has art.
+        # Each candidate passes blank-aware validation in _download_url_to_temp.
+        if not temp_cover:
+            for alt, src in _ranked_cover_candidates(cover_scraper, scraper_results):
+                tmp = _download_url_to_temp(alt)
+                if tmp:
+                    temp_cover = tmp
+                    click.secho(f"Downloaded cover from {src}: {alt}", fg="green")
+                    break
+            if not temp_cover:
                 click.secho(
-                    f"Failed to download scraper cover (missing/invalid): {cover_scraper}",
+                    "No scraper cover usable (missing/invalid/blank).",
                     fg="yellow",
                 )
         # 4) DuckDuckGo fallback if no scraper cover
@@ -2886,6 +2922,14 @@ def up(
                         click.secho(f"Fallback DuckDuckGo cover: {dd_path}", fg="green")
             except Exception as e:
                 click.secho(f"DuckDuckGo fallback failed: {e}", fg="yellow")
+        # 4b) OpenLibrary ISBN cover (keyless, reliable; DuckDuckGo i.js 403s).
+        # Missing covers return a 1px image, rejected by size validation.
+        if not temp_cover and metadata.get("isbn"):
+            ol_url = f"https://covers.openlibrary.org/b/isbn/{metadata['isbn']}-L.jpg"
+            tmp = _download_url_to_temp(ol_url)
+            if tmp:
+                temp_cover = tmp
+                click.secho(f"Fallback OpenLibrary cover: {ol_url}", fg="green")
         # 5) Embedded file cover as last resort
         if not temp_cover and cover_path and Path(cover_path).exists():
             from simurg.images.validate import is_valid_cover
@@ -2929,9 +2973,21 @@ def up(
                 Uploader = get_uploader(uploader_name)
                 # keys already handled inside uploader via config
                 rehost_url, _ = Uploader().upload_file(temp_cover)
-                cover_url = rehost_url
-                click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
-                click.echo(fmt_url(cover_url))
+                # SEE what the rehost actually serves: download it back and
+                # validate content (blank/placeholder rejections upload imageless).
+                from simurg.images.validate import check_rehosted_url
+
+                ok, why = check_rehosted_url(rehost_url)
+                if not ok:
+                    click.secho(
+                        f"{FAIL_SYMBOL} Rehosted image failed content check ({why}) — continuing without image",
+                        fg="yellow",
+                    )
+                    cover_url = None
+                else:
+                    cover_url = rehost_url
+                    click.secho("Cover rehosted: ", fg="green", bold=True, nl=False)
+                    click.echo(fmt_url(cover_url))
             except Exception as e:
                 click.secho(f"{FAIL_SYMBOL} Cover rehost failed: {e}", fg="red")
                 click.secho(
