@@ -68,6 +68,16 @@ This file records past failures for this project. Agents must read it before sta
 - **How to avoid next time**: Never `rg`/`cat` `config.toml` unmasked. Scope secret scans to tracked files (`git grep`) and verify `config.toml` presence only via masked key-length checks.
 
 ### 2026-09-30
+- **What happened**: Scraper-cover candidate list referenced `scraper_results` at cover stage, but it is only assigned inside `if not url_used` — `--url` runs crashed with UnboundLocalError (caught by test_cli_up_url_flag_uses_pasted_url).
+- **Why it happened**: Trusted agent claim "init None each iteration" without reading the init site (line 2055, inside the branch).
+- **How to avoid next time**: Init loop vars next to siblings (`scraper_data = {}`); verify agent claims at the exact lines before editing.
+
+### 2026-09-30
+- **What happened**: Uploaded 5 books with blank/placeholder covers (Magnolia Summer + 4 more, e.g. Keepers/Finders/Mountain Moonlight white blank, Rules of Contact gray placeholder). Spot-checked only books 1,2,3,5,10 — all real — and declared covers verified while blanks sat at book14/18/19/22/30.
+- **Why it happened**: (1) `is_valid_cover` checked only bytes (≥5KB) + dims (≥100px); the white blank is 14KB 383×500 so it passed. Google Books frontcover returns blank for unscanned books. (2) Verified rehosted URLs for reachability, never looked at image CONTENT. (3) Spot-check sample missed the bad ones.
+- **How to avoid next time**: Content-check every cover: sha256 blocklist (`BLANK_COVER_SHA256`) + pixel-variance blank test (`stdev < 20`; real covers scored ≥27, placeholders 9–16). `_download_url_to_temp` rejects blanks so fallback chain runs; rehost step downloads the rehosted URL back and drops to imageless on fail. Audit 100% of saved covers with the detector, not a visual sample. Added `tests/test_validate.py`.
+
+### 2026-09-30
 - **What happened**: Auto-upload driver stalled on early-dupe prompt; pexpect TIMEOUT killed run after 3/10 uploads. Separately, uploads carried lame tags (`non.fiction`, bare `fiction`) despite rich descriptions.
 - **Why it happened**: (1) Driver matched `continue / \[s\]kip file` but prompt renders `[c]ontinue / [s]kip` (`]` breaks substring). (2) `GENRE_LEXICON` lacked variants (`suspenseful`, `mysterious`, `romance`/`romantic`) and matcher used strict `\bphrase\b`, so `suspenseful`/`mysterious`/`romance with` never hit; fallback `non.fiction` stuck and merged alongside real suggestions.
 - **How to avoid next time**: Match prompts on stable substrings (`skip this file now`); add morphological variants to lexicon + stem-tolerant `\w*` matching; drop `non.fiction` fallback when suggestions exist (combine.py + review.py); answer cross-enrich `y` (primary locked, fills tags).
